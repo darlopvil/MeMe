@@ -1,0 +1,311 @@
+;; Copyright (C) 2024 Skylar Astaroth <cobra@vern.cc>
+;;
+;; This file is part of MeMe
+;;
+;; MeMe is free software: you can redistribute it and/or modify it under the
+;; terms of the GNU Affero General Public License as published by the Free
+;; Software Foundation, either version 3 of the License, or (at your option) any
+;; later version.
+;;
+;; This program is distributed in the hope that it will be useful, but WITHOUT
+;; ANY WARRANTY; without even the implied warranty of  MERCHANTABILITY or
+;; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License
+;; for more details.
+;;
+;; You should have received a copy of the GNU Affero General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+(define-module (meme scraping)
+  #:use-module ((sxml xpath)
+                #:renamer (lambda (p)
+                            (if (eq? 'filter p)
+                              'sxml-filter
+                              p)))
+  #:export (proxy
+            get-articles
+            get-editorials
+            get-meme
+            get-meme-list
+            get-category-list
+            get-photos
+            get-photo
+            get-sidebar-gallery
+            get-sidebar-trending
+            get-pagination))
+
+(define (proxy url)
+  (string-append "/proxy?url=" url))
+
+(define (get-articles d)
+  (define pref '())
+  (define articles '(placeholder))
+  (do ((i 1 (1+ i)))
+    ((> i (length ((sxpath '(html body div main (article 2) div (div 1) div
+                             (div 2) (div 1) article))
+                   d))))
+    (set! pref `(html body div main (article 2) div (div 1) div (div 2)
+                 (div 1) (article ,i)))
+    (append!
+      articles
+      (list
+        (if (eq? (length ((sxpath (append pref '(div section))) d)) 1)
+          (list
+            (car ((sxpath (append pref '(div section h1 a @ href *text*))) d))
+            (car ((sxpath (append pref '(div section h1 a        *text*))) d))
+            (car ((sxpath (append pref '(// img @ data-src       *text*))) d))
+            (let ((comment ((sxpath (append pref '(div section (div 2) p
+                                                       *text*))) d)))
+              (if (equal? comment '()) "" (car comment)))
+            (car ((sxpath (append pref '(div section (p 1) em *text*))) d)))
+          (list
+            (car ((sxpath (append pref '(h1 a @ href *text*))) d))
+            (car ((sxpath (append pref '(h1 a        *text*))) d))
+            (car ((sxpath (append pref '(// img @ data-src *text*))) d))
+            (car ((sxpath (append pref '((div 2) p   *text*))) d))
+            (car ((sxpath (append pref '((div 3) em  *text*))) d)))))))
+  (cdr articles))
+
+(define (not-newline s)
+  (not (equal? "\n" s)))
+
+(define (get-editorials d)
+  (define pref
+    '(html main article article div (div 1) div div section ol li a))
+  (map list
+       ((sxpath (append pref '(@   href      *text*))) d)
+       (filter not-newline ((sxpath (append pref '(div h3 *text*))) d))
+       ((sxpath (append pref '(div img @ src *text*))) d)
+       (filter not-newline ((sxpath (append pref '(div p  *text*))) d))))
+
+
+(define (modify-list nodeset pred proc)
+  (define ret (list-copy nodeset))
+  (do ((i 0 (1+ i)))
+      ((>= i (length ret)))
+    (let ((e (list-ref ret i)))
+      (if (pred e)
+       (list-set! ret i (proc e))
+        (if (list? e)
+          (list-set! ret i (modify-list e pred proc))))))
+  ret)
+
+(define (img-replace nodeset)
+  (modify-list
+    nodeset (node-typeof? 'img)
+    (lambda (e)
+      `(img (@ (src ,(proxy (car ((sxpath '(@ data-src *text*)) e))))
+               (loading "lazy"))))))
+
+(define (script-kill nodeset)
+  (modify-list
+    nodeset (node-typeof? 'script)
+    (lambda _ '())))
+
+(define (clean-bodycopy bodycopy)
+  (script-kill (img-replace bodycopy)))
+
+(define (get-meme d)
+  (define pref
+    '(html body main (article 2) div (div 1) div (div 2) article))
+  (define bodycopy '())
+  (define heading '())
+  (define has-updated #f)
+
+  (if (not (equal? '() ((sxpath '(html main article h4)) d)))
+    (begin
+      (set! pref '(html main article))
+      (set! bodycopy
+        (clean-bodycopy
+          ((sxpath
+             (append pref '(div (div (@ class (equal? "contents"))) (div 1))))
+           d)))
+      (set! heading
+        (list
+          (car ((sxpath (append pref '(h1))) d))
+          (car ((sxpath (append pref '((div 1) img @ src-large *text*))) d))
+          '() '()
+          `(p "By "
+              ,(car (filter not-newline
+                            ((sxpath (append pref '((div 3) a *text*))) d)))))))
+    (begin
+      (set! bodycopy
+        (clean-bodycopy
+          ((sxpath '(// (section (@ class (equal? "bodycopy"))))) d)))
+      (set! has-updated
+        (eqv? 2 ((sxpath (append pref '(header section div footer p))) d)))
+      (set! heading
+        (list
+          (car ((sxpath (append pref '(header section h1))) d))
+          (car ((sxpath (append pref '(header // img @ src *text*))) d))
+          ((sxpath (append pref '(header section div h5))) d)
+          (if has-updated
+            '()
+            ((sxpath (append pref '(header section div footer (p 1)))) d))
+          (if has-updated
+            ((sxpath (append pref '(header section div footer p))) d)
+            ((sxpath (append pref '(header section div footer (p 2)))) d))))))
+  (define pred
+    (lambda (nodeset)
+      (equal? '()
+              ((sxpath '(@ class (equal? "collection-item"))) nodeset))))
+  (append
+    (append
+      heading
+      (list (cdr
+        ((sxml-filter
+           (lambda (nodeset)
+             (and
+               (or (not ((node-typeof? 'div) nodeset))
+                   (not (equal? '() ((sxpath '(div p))
+                                     `(placeholder ,nodeset)))))
+               (or (not ((node-typeof? 'h2) nodeset))
+                   (equal? '() ((sxpath '(h2 @ id (equal? "search-interest")))
+                                `(placeholder ,nodeset))))
+               (or (not ((node-typeof? 'p) nodeset))
+                   (equal? '() ((sxpath '(p br))
+                                `(placeholder ,nodeset))))
+               (not ((node-typeof? 'iframe) nodeset)))))
+         ((sxml-filter pred) (cdar bodycopy))))))
+    (list
+      (map
+        (lambda (node)
+          (list
+            ((sxpath '(h2)) node)
+            ((sxpath '((p 1) a @ href *text*)) node)
+            ((sxpath '(p a img @ src *text*)) node)
+            ((sxpath '((p 3) a @ href *text*)) node)
+            ((sxpath '((p 5) a @ href *text*)) node)))
+        ((sxml-filter (lambda (n) (not (pred n)))) (cdar bodycopy))))))
+
+(define (get-meme-list d)
+  (define pref '(html main article html head article section))
+  (define pref2 '(// (section (@ class (equal? "gallery")))
+                  (div (@ class (equal? "groups"))) a))
+  (list
+    ((sxpath (append pref '((div 1) h1 span *text*))) d)
+    ((sxpath (append pref '((div 1) p))) d)
+    (if (equal? ((sxpath (append pref '((div 2) (div 2)))) d) '())
+      '()
+      ((sxpath (append pref '((div 2) (div 1) (div 1) (div 1)))) d))
+    (if (equal? ((sxpath (append pref '((div 2) (div 2)))) d) '())
+      ((sxpath (append pref '((div 2) (div 1) (div 1) (div 2)))) d)
+      ((sxpath (append pref '((div 2) (div 2) div (div 2)))) d))
+
+    (map list
+         ((sxpath (append pref2 '(@ href *text*))) d)
+         ((sxpath (append pref2 '(div div (div 2) img @ src *text*))) d)
+         ((sxpath (append pref2 '(@ data-title *text*))) d))))
+
+(define (get-category-list d)
+  (define categories ((sxpath '(html body (div 2) div (div 3) a)) d))
+  (define awful
+    (map
+      (lambda (n)
+        (list
+          ((sxpath '(@ href *text*)) n)
+          ((sxpath '(@ data-category *text*)) n)
+          ((sxpath '(@ data-type *text*)) n)
+          ((sxpath '(span *text*)) n)))
+      ((sxml-filter (select-kids (node-typeof? 'span))) categories)))
+  (define cur '())
+  (define subcats '())
+  (define intermediate '())
+  (define next-intermediate '())
+  (define out '())
+  (define out1
+    (do ((i 0 (1+ i)))
+        ((>= i (length awful))
+         out)
+      (set! cur (list-ref awful i))
+      (if (equal? (caddr cur) '())
+        (begin
+          (set! intermediate next-intermediate)
+          (set! next-intermediate
+            (list (list (caar cur)
+                        (caadr cur)
+                        (car (cadddr cur)))))
+          (set! intermediate (append intermediate (list subcats)))
+          (set! out (append out (list intermediate)))
+          (set! subcats '()))
+        (set! subcats
+          (append
+            subcats
+            (list (list (caar cur)
+                        (caaddr cur)
+                        (car (cadddr cur)))))))))
+  (append
+    ((sxpath '(html body div div div header hgroup h1)) d)
+    (list (cdr out1))))
+
+(define (get-photos d)
+  (define pref '(html main article html head article section))
+  (list
+    ((sxpath (append pref '((div 1) h1 span *text*))) d)
+    (car ((sxpath (append pref '((div 2) (div 1) (div 1) div))) d))
+    (let ((form ((sxpath (append pref '((div 2) (div 2) div (div 2)))) d)))
+      (if (equal? form '()) '() (car form)))
+    (map cons
+         ((sxpath (append pref '((div 3) div section div a @ href *text*))) d)
+         ((sxpath (append pref '((div 3) div section div a div (div 1) (div 2)
+                                 img @ src *text*))) d))))
+
+(define (get-photo d)
+  (define pref '(html body main (article 2) div))
+  (define pref2 (append pref
+                        '((div 2) (div 2) ((div) (@ class (equal? "row"))) p)))
+  (list
+    (car ((sxpath (append pref '((div 1) div (div 2) div header h1))) d))
+    (car ((sxpath (append pref '((div 1) div (div 2) div (div 2) div a div img @
+                                 alt *text*))) d))
+    (proxy (car ((sxpath (append pref '((div 1) div (div 2) div (div 2) div a @
+                                        href *text*))) d)))
+    (car  ((sxpath (append pref2 '(a))) d))
+    (car  ((sxpath pref2) d))
+    (cadr ((sxpath pref2) d))))
+
+(define (get-sidebar-gallery d)
+  (define pref '(// (* (@ id (equal? "popular_galleries")))))
+  (map
+    (lambda (proc)
+      (list
+        (proc ((sxpath (append pref '(h3))) d))
+        (proc ((sxpath (append pref '(div (div 1) a @ href *text*))) d))
+        (proc ((sxpath (append pref '(div (div 1) a img @ alt *text*))) d))
+        (proc ((sxpath (append pref '(div (div 1) a img @ data-src *text*))) d))
+        (proc ((sxpath (append pref '(div (div 1) h4 a *text*))) d))
+        (proc ((sxpath (append pref '(div (div 2) a @ href *text*))) d))
+        (proc ((sxpath (append pref '(div (div 2) a img @ alt *text*))) d))
+        (proc ((sxpath (append pref '(div (div 2) a img @ data-src *text*))) d))
+        (proc ((sxpath (append pref '(div (div 2) h4 a *text*))) d))
+        (proc ((sxpath (append pref '(div (div 3) a @ href *text*))) d))
+        (proc ((sxpath (append pref '(div (div 3) a img @ alt *text*))) d))
+        (proc ((sxpath (append pref '(div (div 3) a img @ data-src *text*))) d))
+        (proc ((sxpath (append pref '(div (div 3) h4 a *text*))) d))
+        (proc ((sxpath (append pref '(div (div 4) a @ href *text*))) d))
+        (proc ((sxpath (append pref '(div (div 4) a img @ alt *text*))) d))
+        (proc ((sxpath (append pref '(div (div 4) a img @ data-src *text*))) d))
+        (proc ((sxpath (append pref '(div (div 4) h4 a *text*))) d))))
+    (list car cadr)))
+
+(define (get-sidebar-trending d)
+  (define pref '(// (* (@ id (equal? "trending_photos")))))
+  (if (equal? ((sxpath pref) d) '())
+    ""
+    (append
+      ((sxpath (append pref '(h3 a @ href *text*))) d)
+      ((sxpath (append pref '(h3 a *text*))) d)
+      (map
+        (lambda (n)
+          (map cons
+               ((sxpath (append pref `(table (tr ,n) td a @ href *text*))) d)
+               ((sxpath (append pref `(table (tr ,n) td a img @ data-src
+                                       *text*))) d)))
+        '(1 2 3)))))
+
+(define (get-pagination d)
+  (if (not (equal? '() ((sxpath '(// (* (@ class (equal? "pager"))))) d)))
+    (append
+      (list (car ((sxpath '(// (* (@ class (equal? "pager"))) li)) d)))
+      ((sxpath '(// (* (@ class (equal? "pager"))) span li)) d)
+      (list (cadr ((sxpath '(// (* (@ class (equal? "pager"))) li)) d))))
+    '()))

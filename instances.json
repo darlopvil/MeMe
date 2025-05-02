@@ -1,0 +1,11 @@
+[
+    {
+	"clearnet": "https://mm.vern.cc",
+	"tor": "http://mm.vernccvbvyi5qhfzyqengccj7lkove6bjot2xhh5kajhwvidqafczrad.onion",
+	"i2p": "http://vernerox4q74g7o5vunlrisutgriuyl5qcoooinmzhrflse62nwa.b32.i2p",
+	"patches": "https://git.vern.cc/vern/modifications/src/branch/master/meme",
+	"country": "US",
+	"owner_name": "~vern",
+	"owner_website": "https://vern.cc"
+    }
+]
