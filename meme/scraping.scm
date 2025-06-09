@@ -1,4 +1,4 @@
-;; Copyright (C) 2024 Skylar Astaroth <cobra@vern.cc>
+;; Copyright (C) 2024-2025 Skylar Astaroth <cobra@vern.cc>
 ;;
 ;; This file is part of MeMe
 ;;
@@ -31,7 +31,8 @@
             get-photo
             get-sidebar-gallery
             get-sidebar-trending
-            get-pagination))
+            get-pagination
+            get-title))
 
 (define (proxy url)
   (string-append "/proxy?url=" url))
@@ -106,7 +107,8 @@
 
 (define (get-meme d)
   (define pref
-    '(html body main (article 2) div (div 1) div (div 2) article))
+    '(// article // (article (@ class (equal? "entry")))
+      (div (@ class (equal? "desktop-only")))))
   (define bodycopy '())
   (define heading '())
   (define has-updated #f)
@@ -121,12 +123,16 @@
            d)))
       (set! heading
         (list
-          (car ((sxpath (append pref '(h1))) d))
-          (car ((sxpath (append pref '((div 1) img @ src-large *text*))) d))
+          (car (filter not-newline ((sxpath (append pref '(h1 *text*))) d)))
+          (car ((sxpath (append pref '(img @ src-large *text*))) d))
           '() '()
           `(p "By "
-              ,(car (filter not-newline
-                            ((sxpath (append pref '((div 3) a *text*))) d)))))))
+              ,(car (filter
+                      not-newline
+                      ((sxpath
+                         (append
+                           pref '(div (a (@ class (equal? "author"))) *text*)))
+                       d)))))))
     (begin
       (set! bodycopy
         (clean-bodycopy
@@ -135,7 +141,8 @@
         (eqv? 2 ((sxpath (append pref '(header section div footer p))) d)))
       (set! heading
         (list
-          (car ((sxpath (append pref '(header section h1))) d))
+          (car (filter not-newline
+                       ((sxpath (append pref '(header section h1 *text*))) d)))
           (car ((sxpath (append pref '(header // img @ src *text*))) d))
           ((sxpath (append pref '(header section div h5))) d)
           (if has-updated
@@ -250,18 +257,17 @@
                                  img @ src *text*))) d))))
 
 (define (get-photo d)
-  (define pref '(html body main (article 2) div))
-  (define pref2 (append pref
-                        '((div 2) (div 2) ((div) (@ class (equal? "row"))) p)))
+  (define pref  '(// (* (@ id (equal? "photo_wrapper"))) div a))
+  (define pref2 '(// (* (@ id (equal? "content"))) (div 2) (div 2)))
+  ;; (title alt src source views date)
   (list
-    (car ((sxpath (append pref '((div 1) div (div 2) div header h1))) d))
-    (car ((sxpath (append pref '((div 1) div (div 2) div (div 2) div a div img @
-                                 alt *text*))) d))
-    (proxy (car ((sxpath (append pref '((div 1) div (div 2) div (div 2) div a @
-                                        href *text*))) d)))
-    (car  ((sxpath (append pref2 '(a))) d))
-    (car  ((sxpath pref2) d))
-    (cadr ((sxpath pref2) d))))
+    (car ((sxpath '(// (* (@ id (equal? "media-title"))))) d))
+    (car ((sxpath (append pref '(// img @ alt *text*))) d))
+    (car ((sxpath (append pref '(@ href *text*))) d))
+    (car ((sxpath (append pref2 '((div (@ class (equal? "row")) 4) p a))) d))
+    (car ((sxpath (append pref2 '((div (@ class (equal? "row")) 1) p))) d))
+    (car ((sxpath (append pref2 '((div (@ class (equal? "row")) 2) p abbr)))
+          d))))
 
 (define (get-sidebar-gallery d)
   (define pref '(// (* (@ id (equal? "popular_galleries")))))
@@ -309,3 +315,9 @@
       ((sxpath '(// (* (@ class (equal? "pager"))) span li)) d)
       (list (cadr ((sxpath '(// (* (@ class (equal? "pager"))) li)) d))))
     '()))
+
+(define (get-title d)
+  (if (string? d) d
+    (string-drop-right
+      (car (filter not-newline ((sxpath '(html head title *text*)) d)))
+      18)))
