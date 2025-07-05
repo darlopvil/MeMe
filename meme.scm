@@ -33,6 +33,8 @@
     (display (string-append
                (strftime "%c" (localtime (current-time)))
                ": " (uri->string uri)))
+    (if (equal? (car path-components) "sensitive")
+      (set! path-components (cdr path-components)))
     (cond
       ((equal? path "/style.css")
        (display ";\tHandler: internal") (newline)

@@ -16,6 +16,8 @@
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 (define-module (meme scraping)
+  #:use-module (gcrypt base64)
+  #:use-module (rnrs bytevectors)
   #:use-module ((sxml xpath)
                 #:renamer (lambda (p)
                             (if (eq? 'filter p)
@@ -94,7 +96,13 @@
   (modify-list
     nodeset (node-typeof? 'img)
     (lambda (e)
-      `(img (@ (src ,(proxy (car ((sxpath '(@ data-src *text*)) e))))
+      `(img (@ (src ,(proxy
+                       (car (append
+                              ((sxpath '(@ data-src *text*)) e)
+                              (map (lambda (s)
+                                     (utf8->string
+                                       (base64-decode s base64-alphabet #f #f)))
+                                   ((sxpath '(@ data-nsfw-src *text*)) e))))))
                (loading "lazy"))))))
 
 (define (script-kill nodeset)
