@@ -26,14 +26,13 @@
   #:use-module (ice-9 string-fun)
   #:export (pages?
             error-page
-            articles-page
+            home-page
             editorials-page
             meme-page
-            meme-list-page
-            category-list-page
+            memes-page
+            categories-page
             photos-page
             photo-page
-            videos-page
             proxy-page))
 
 (define (pages? components str)
@@ -90,7 +89,9 @@
                (let ((doc (html->sxml-0nf body #:strict? #t)))
                  (values good-response
                          (string-replace-substring
-                           (shtml->html (procedure doc))
+                           (string-replace-substring
+                             (shtml->html (procedure doc))
+                             "https://knowyourmeme.com:443" "")
                            "https://knowyourmeme.com" ""))))
               ((and (>= (response-code resp) 300) (<= (response-code resp) 399))
                (if (equal? (uri-path (response-location resp)) path)
@@ -99,9 +100,10 @@
                  (redirect resp (response-code resp))))
               (else (error-page (response-code resp))))))))
 
-(define (articles-page path)
-  (display "; \tHandler: articles-page")
-  (generic-page articles-template path))
+(define (home-page)
+  (display "; \tHandler: home-page; \tStatus: 200")
+  (newline)
+  (values good-response (shtml->html home-template)))
 
 (define (editorials-page path)
   (display "; \tHandler: editorials-page")
@@ -111,13 +113,13 @@
   (display "; \tHandler: meme-page")
   (generic-page meme-template path))
 
-(define (meme-list-page path)
-  (display "; \tHandler: meme-list-page")
-  (generic-page meme-list-template path))
+(define (memes-page path)
+  (display "; \tHandler: memes-page")
+  (generic-page memes-template path))
 
-(define (category-list-page path)
-  (display "; \tHandler: category-list-page")
-  (generic-page category-list-template path))
+(define (categories-page path)
+  (display "; \tHandler: categories-page")
+  (generic-page categories-template path))
 
 (define (photos-page path)
   (display "; \tHandler: photos-page")

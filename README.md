@@ -19,7 +19,7 @@ You will need need `guile`, `guile-gnutls`, `guile-lib`, and `guile-gcrypt`.
 ## Running
 0. Install the dependencies
 1. Clone the repository using `git clone --recurse-submodules https://git.vern.cc/cobra/MeMe`
-2. Run `guile -L . meme.scm`
+2. Run `guile meme.scm`
 3. Connect to http://localhost:8003 (or point your reverse proxy to it)
 4. Profit
 

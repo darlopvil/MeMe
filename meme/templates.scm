@@ -20,11 +20,11 @@
   #:use-module (ice-9 string-fun)
   #:export (error-template
             eof-template
-            articles-template
+            home-template
             editorials-template
             meme-template
-            meme-list-template
-            category-list-template
+            memes-template
+            categories-template
             photos-template
             photo-template))
 
@@ -109,50 +109,6 @@
           `(p (a (@ (href ,(getenv "PATCHES_URL"))) "Patches"))
           '()))))
 
-(define (sidebar-gallery-template sidebar-gallery)
-  (map (lambda (l)
-         `(div (@ (class "sidebar box"))
-           ,(car l)
-           (table (@ (class "gallery"))
-             (tr (td (a (@ (href ,(kym->local (cadr l))))
-                       (img (@ (src ,(proxy (cadddr l)))
-                               (alt ,(caddr l))
-                               (loading "lazy")))
-                       (p (b ,(list-ref l 4)))))
-                 (td (a (@ (href ,(kym->local (list-ref l 5))))
-                       (img (@ (src ,(proxy (list-ref l 7)))
-                               (alt ,(list-ref l 6))
-                               (loading "lazy")))
-                       (p (b ,(list-ref l 8))))))
-             (tr (td (a (@ (href ,(kym->local (list-ref l 9))))
-                       (img (@ (src ,(proxy (list-ref l 11)))
-                               (alt ,(list-ref l 10))
-                               (loading "lazy")))
-                       (p (b ,(list-ref l 12)))))
-                 (td (a (@ (href ,(kym->local (list-ref l 13))))
-                       (img (@ (src ,(proxy (list-ref l 15)))
-                               (alt ,(list-ref l 14))
-                               (loading "lazy")))
-                       (p (b ,(list-ref l 16)))))))))
-       sidebar-gallery))
-
-(define (sidebar-trending-template sidebar-trending)
-  (if (not (equal? sidebar-trending ""))
-    `(div (@ (class "sidebar box"))
-       (h3 (a (@ (href ,(kym->local (car sidebar-trending))))
-             ,(cadr sidebar-trending)))
-       (table (@ (class "trending-images"))
-         ,(map
-            (lambda (r)
-              `(tr
-                 ,(map (lambda (p)
-                         `(td (a (@ (href ,(kym->local (car p))))
-                                (img (@ (src ,(proxy (cdr p)))
-                                        (loading "lazy"))))))
-                       r)))
-            (cddr sidebar-trending))))
-    '()))
-
 (define (pagination-template pagination)
   (if (not (equal? pagination '()))
     `(div (@ (class "pagination box"))
@@ -188,10 +144,22 @@
            (br)
            ,footer)))
 
-(define (articles-template body)
-  `(html ,(html-head body)
+(define home-template
+  `(html ,(html-head "Home")
          (body
            ,heading
+           (div (@ (class "home box"))
+             (h1 "MeMe")
+             (p "MeMe is an alternative front-end for KnowYourMeme.")
+             (p "MeMe provides a lightweight, JavaScript-free interface for browsing KnowYourMeme.")
+             (h2 "How to use")
+             (p "You can use MeMe by replacing knowyourmeme.com with the hostname of this instance in the URL of a KnowYourMeme page.")
+             (p "Alternatively, you can use the " (a (@ (href "https://libredirect.github.io/")) "LibRedirect browser extension") " to have this done automatically for all KnowYourMeme pages.")
+             (p "Example: "
+                (a (@ (href
+                        "https://knowyourmeme.com/memes/navy-seal-copypasta"))
+                   "KnowYourMeme")
+                " / " (a (@ (href "/memes/navy-seal-copypasta")) "MeMe")))
            ,footer)))
 
 (define (editorials-template body)
@@ -230,7 +198,6 @@
              ,(if (not (equal? (car (last-pair meme)) '()))
                 `(div (@ (class "collection-wrapper"))
                    ,(map (lambda (l)
-                           (display l) (newline)
                            `(div (@ (class "box collection-item"))
                               ,(caar l)
                               (p (a (@ (href ,(car (cadddr l)))) "Source"))
@@ -242,22 +209,22 @@
                 '())
              ,footer))))
 
-(define (meme-list-template body)
-  (let ((meme-list (get-meme-list body)))
+(define (memes-template body)
+  (let ((memes (get-memes body)))
     `(html ,(html-head body)
            (body
              ,heading
-             (div (@ (class "box meme-list"))
-               (h1 ,(car meme-list))
-               ,(if (equal? (cadr meme-list) '())
+             (div (@ (class "box memes"))
+               (h1 ,(car memes))
+               ,(if (equal? (cadr memes) '())
                   '()
-                  (caadr meme-list))
-               ,(caaddr meme-list)
+                  (caadr memes))
+               ,(caaddr memes)
                (br)
                (div (@ (style "display: inline-flex;"))
-                 ,(cddar (cadddr meme-list))))
-             (div (@ (class "box meme-list-body"))
-               (ul (@ (class "meme-list-list"))
+                 ,(cddar (cadddr memes))))
+             (div (@ (class "box memes-body"))
+               (ul (@ (class "memes-list"))
                  ,(map (lambda (l)
                          `(li
                             (a (@ (href ,(kym->local (car l))))
@@ -265,20 +232,20 @@
                                       (loading "lazy")))
                               (p (@ (class "tooltip box"))
                                 ,(caddr l)))))
-                       (car (cddddr meme-list)))))
+                       (car (cddddr memes)))))
              ,(if (not (equal? (get-pagination body) ""))
                 `(div (@ (class "wide-pagination"))
                    ,(pagination-template (get-pagination body)))
                 '())
              ,footer))))
 
-(define (category-list-template body)
-  (let ((category-list (get-category-list body)))
+(define (categories-template body)
+  (let ((categories (get-categories body)))
     `(html ,(html-head body)
            (body
              ,heading
-             (div (@ (class "box category-list"))
-               ,(car category-list)
+             (div (@ (class "box categories"))
+               ,(car categories)
                (ul
                  ,(map (lambda (l)
                          `(li
@@ -293,7 +260,7 @@
                                                 (cadr m) " (" (caddr m) ")"))))
                                     (cadr l)))
                             (br)))
-                       (cadr category-list))))
+                       (cadr categories))))
              ,footer))))
 
 (define (photos-template body)

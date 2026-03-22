@@ -24,49 +24,17 @@
                               'sxml-filter
                               p)))
   #:export (proxy
-            get-articles
             get-editorials
             get-meme
-            get-meme-list
-            get-category-list
+            get-memes
+            get-categories
             get-photos
             get-photo
-            get-sidebar-gallery
-            get-sidebar-trending
             get-pagination
             get-title))
 
 (define (proxy url)
   (string-append "/proxy?url=" url))
-
-(define (get-articles d)
-  (define pref '())
-  (define articles '(placeholder))
-  (do ((i 1 (1+ i)))
-    ((> i (length ((sxpath '(html body div main (article 2) div (div 1) div
-                             (div 2) (div 1) article))
-                   d))))
-    (set! pref `(html body div main (article 2) div (div 1) div (div 2)
-                 (div 1) (article ,i)))
-    (append!
-      articles
-      (list
-        (if (eq? (length ((sxpath (append pref '(div section))) d)) 1)
-          (list
-            (car ((sxpath (append pref '(div section h1 a @ href *text*))) d))
-            (car ((sxpath (append pref '(div section h1 a        *text*))) d))
-            (car ((sxpath (append pref '(// img @ data-src       *text*))) d))
-            (let ((comment ((sxpath (append pref '(div section (div 2) p
-                                                       *text*))) d)))
-              (if (equal? comment '()) "" (car comment)))
-            (car ((sxpath (append pref '(div section (p 1) em *text*))) d)))
-          (list
-            (car ((sxpath (append pref '(h1 a @ href *text*))) d))
-            (car ((sxpath (append pref '(h1 a        *text*))) d))
-            (car ((sxpath (append pref '(// img @ data-src *text*))) d))
-            (car ((sxpath (append pref '((div 2) p   *text*))) d))
-            (car ((sxpath (append pref '((div 3) em  *text*))) d)))))))
-  (cdr articles))
 
 (define (not-newline s)
   (not (equal? "\n" s)))
@@ -110,8 +78,13 @@
     nodeset (node-typeof? 'script)
     (lambda _ '())))
 
+(define (style-kill nodeset)
+  (modify-list
+    nodeset (node-typeof? 'style)
+    (lambda _ '())))
+
 (define (clean-bodycopy bodycopy)
-  (script-kill (img-replace bodycopy)))
+  (style-kill (script-kill (img-replace bodycopy))))
 
 (define (get-meme d)
   (define pref
@@ -192,8 +165,8 @@
             ((sxpath '((p 5) a @ href *text*)) node)))
         ((sxml-filter (lambda (n) (not (pred n)))) (cdar bodycopy))))))
 
-(define (get-meme-list d)
-  (define pref '(html main article html head article section))
+(define (get-memes d)
+  (define pref '(html body main article html head article section))
   (define pref2 '(// (section (@ class (equal? "gallery")))
                   (div (@ class (equal? "groups"))) a))
   (list
@@ -211,7 +184,7 @@
          ((sxpath (append pref2 '(div div (div 2) img @ src *text*))) d)
          ((sxpath (append pref2 '(@ data-title *text*))) d))))
 
-(define (get-category-list d)
+(define (get-categories d)
   (define categories ((sxpath '(html body (div 2) div (div 3) a)) d))
   (define awful
     (map
@@ -277,44 +250,6 @@
     (car ((sxpath (append pref2 '((div (@ class (equal? "row")) 2) p abbr)))
           d))))
 
-(define (get-sidebar-gallery d)
-  (define pref '(// (* (@ id (equal? "popular_galleries")))))
-  (map
-    (lambda (proc)
-      (list
-        (proc ((sxpath (append pref '(h3))) d))
-        (proc ((sxpath (append pref '(div (div 1) a @ href *text*))) d))
-        (proc ((sxpath (append pref '(div (div 1) a img @ alt *text*))) d))
-        (proc ((sxpath (append pref '(div (div 1) a img @ data-src *text*))) d))
-        (proc ((sxpath (append pref '(div (div 1) h4 a *text*))) d))
-        (proc ((sxpath (append pref '(div (div 2) a @ href *text*))) d))
-        (proc ((sxpath (append pref '(div (div 2) a img @ alt *text*))) d))
-        (proc ((sxpath (append pref '(div (div 2) a img @ data-src *text*))) d))
-        (proc ((sxpath (append pref '(div (div 2) h4 a *text*))) d))
-        (proc ((sxpath (append pref '(div (div 3) a @ href *text*))) d))
-        (proc ((sxpath (append pref '(div (div 3) a img @ alt *text*))) d))
-        (proc ((sxpath (append pref '(div (div 3) a img @ data-src *text*))) d))
-        (proc ((sxpath (append pref '(div (div 3) h4 a *text*))) d))
-        (proc ((sxpath (append pref '(div (div 4) a @ href *text*))) d))
-        (proc ((sxpath (append pref '(div (div 4) a img @ alt *text*))) d))
-        (proc ((sxpath (append pref '(div (div 4) a img @ data-src *text*))) d))
-        (proc ((sxpath (append pref '(div (div 4) h4 a *text*))) d))))
-    (list car cadr)))
-
-(define (get-sidebar-trending d)
-  (define pref '(// (* (@ id (equal? "trending_photos")))))
-  (if (equal? ((sxpath pref) d) '())
-    ""
-    (append
-      ((sxpath (append pref '(h3 a @ href *text*))) d)
-      ((sxpath (append pref '(h3 a *text*))) d)
-      (map
-        (lambda (n)
-          (map cons
-               ((sxpath (append pref `(table (tr ,n) td a @ href *text*))) d)
-               ((sxpath (append pref `(table (tr ,n) td a img @ data-src
-                                       *text*))) d)))
-        '(1 2 3)))))
 
 (define (get-pagination d)
   (if (not (equal? '() ((sxpath '(// (* (@ class (equal? "pager"))))) d)))

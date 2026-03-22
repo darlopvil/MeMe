@@ -15,6 +15,8 @@
 ;; You should have received a copy of the GNU Affero General Public License
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+(add-to-load-path (dirname (current-filename)))
+
 (define-module (meme)
   #:use-module (meme pages)
   #:use-module (web server)
@@ -33,7 +35,8 @@
     (display (string-append
                (strftime "%c" (localtime (current-time)))
                ": " (uri->string uri)))
-    (if (equal? (car path-components) "sensitive")
+    (if (and (not (equal? path-components '()))
+             (equal? (car path-components) "sensitive"))
       (set! path-components (cdr path-components)))
     (cond
       ((equal? path "/style.css")
@@ -51,9 +54,8 @@
                                      get-bytevector-all)))
       ((equal? path "/proxy")
        (proxy-page (uri-query uri)))
-      ((or (equal? path "/")
-           (equal? (car path-components) "page"))
-       (articles-page uristring))
+      ((equal? path "/")
+       (home-page))
       ((and
          (equal? (car path-components) "editorials")
          (or
@@ -123,16 +125,16 @@
               (pages? path-components "popular")
               (pages? path-components "deadpool")
               (pages? path-components "all")))
-       (meme-list-page uristring))
+       (memes-page uristring))
       ((or (equal? (car path-components) "memes")
            (equal? (car path-components) "editorials"))
        (meme-page uristring))
       ((and (equal? (car path-components) "categories")
             (equal? (length path-components) 1))
-       (category-list-page uristring))
+       (categories-page uristring))
       ((or (equal? (car path-components) "categories")
            (equal? (car path-components) "types"))
-       (meme-list-page uristring))
+       (memes-page uristring))
       (else (newline) (error-page 501)))))
 
 
@@ -161,6 +163,7 @@
               (string->number (getenv "PORT"))
               8003))
       (sock (socket PF_INET SOCK_STREAM 0)))
+  (setsockopt sock SOL_SOCKET SO_REUSEPORT 1)
   (bind sock AF_INET INADDR_ANY port)
   (fcntl sock F_SETFL (logior O_NONBLOCK
                               (fcntl sock F_GETFL)))
