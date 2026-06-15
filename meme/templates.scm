@@ -29,13 +29,11 @@
             photo-template))
 
 (define (kym->local url)
-  (if (and (>= (string-length url) 24)
-           (equal? (substring url 0 24) "https://knowyourmeme.com"))
-    (substring url 24)
-    (if (and (>= (string-length url) 33)
-             (equal? (substring url 0 33) "https://trending.knowyourmeme.com"))
-      (substring url 33)
-      url)))
+  (cond ((string-prefix? "https://knowyourmeme.com" url)
+	 (string-drop url 24))
+	((string-prefix? "https://trending.knowyourmeme.com" url)
+	 (string-drop url 33))
+	(else url)))
 
 (define (html-head body)
   `(head (title ,(string-append (get-title body) " | MeMe"))
