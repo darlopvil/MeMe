@@ -30,10 +30,10 @@
 
 (define (kym->local url)
   (cond ((string-prefix? "https://knowyourmeme.com" url)
-	 (string-drop url 24))
-	((string-prefix? "https://trending.knowyourmeme.com" url)
-	 (string-drop url 33))
-	(else url)))
+         (string-drop url 24))
+        ((string-prefix? "https://trending.knowyourmeme.com" url)
+         (string-drop url 33))
+        (else url)))
 
 (define (html-head body)
   `(head (title ,(string-append (get-title body) " | MeMe"))
