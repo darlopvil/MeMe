@@ -119,7 +119,7 @@
         (clean-bodycopy
           ((sxpath '(// (section (@ class (equal? "bodycopy"))))) d)))
       (set! has-updated
-        (eqv? 2 ((sxpath (append pref '(header section div footer p))) d)))
+        (eqv? 2 ((sxpath (append pref '(header section div div p))) d)))
       (set! heading
         (list
           (car (filter not-newline
@@ -128,10 +128,10 @@
           ((sxpath (append pref '(header section div h5))) d)
           (if has-updated
             '()
-            ((sxpath (append pref '(header section div footer (p 1)))) d))
+            ((sxpath (append pref '(header section div div (p 1)))) d))
           (if has-updated
-            ((sxpath (append pref '(header section div footer p))) d)
-            ((sxpath (append pref '(header section div footer (p 2)))) d))))))
+            ((sxpath (append pref '(header section div div p))) d)
+            ((sxpath (append pref '(header section div div (p 2)))) d))))))
   (define pred
     (lambda (nodeset)
       (equal? '()
