@@ -1,4 +1,5 @@
 ;; Copyright (C) 2024-2025 Skylar Astaroth <cobra@vern.cc>
+;; Copyright (C) 2026 darlopvil
 ;;
 ;; This file is part of MeMe
 ;;
@@ -40,6 +41,23 @@
       (and (equal? (list-ref components (- (length components) 2)) "page")
            (equal? (list-ref components (- (length components) 3)) str))))
 
+(define user-agent-header
+  `((user-agent . ,(parse-header 'user-agent "Mozilla/5.0"))))
+
+;; Open the upstream connection ourselves so it is closed on every exit
+;; path. http-request only closes the port it opened when keep-alive? is
+;; false AND the response is read successfully; if read-response throws
+;; (e.g. bad-response), the socket is left open until the GC finds it.
+(define* (fetch url #:key (headers '()))
+  (let ((port (open-socket-for-uri url)))
+    (dynamic-wind
+      (const #t)
+      (lambda ()
+        (http-request url #:port port #:headers headers))
+      (lambda ()
+        (unless (port-closed? port)
+          (close-port port))))))
+
 (define good-response
   (build-response #:code 200
                   #:headers `((content-type . (text/html)))))
@@ -65,12 +83,8 @@
         (body ""))
     (receive (_resp _body)
              (catch 'bad-response
-                    (lambda _ (http-request (string-append base-url path)
-                                             #:headers
-                                             `((user-agent . ,(parse-header
-                                                                'user-agent
-                                                                "Mozilla/5.0")))
-                                             #:keep-alive? #t))
+                    (lambda _ (fetch (string-append base-url path)
+                                     #:headers user-agent-header))
                     (lambda _ (values #f #f)))
              (set! resp _resp)
              (set! body _body))
@@ -145,7 +159,7 @@
             (string-prefix? "https://a.kym-cdn.com/" url)
             (string-prefix? "https://knowyourmeme.com/" url))
       (begin
-        (receive (_resp _body) (http-request url)
+        (receive (_resp _body) (fetch url)
                  (set! resp _resp)
                  (set! body _body))
         (display (string-append "; \tStatus: "
