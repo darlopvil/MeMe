@@ -1,0 +1,7 @@
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+docker-compose.yml.example
+*.swp

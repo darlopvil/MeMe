@@ -1,0 +1,10 @@
+services:
+  meme:
+    build: .
+    image: meme:local
+    container_name: meme_app
+    restart: unless-stopped
+    environment:
+      - PORT=8003
+    ports:
+      - "8003:8003"
