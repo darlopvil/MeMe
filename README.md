@@ -1,60 +1,60 @@
 # MeMe
-MeMe is a privacy-respecting frontend to Know Your Meme
 
-> **This is a modified fork** of [cobra/MeMe](https://codeberg.org/cobra/MeMe) by Skylar Astaroth, maintained by darlopvil since October 2026. See `NOTICE` for details. Licensed under the AGPLv3, same as upstream.
+A privacy-respecting, JavaScript-free frontend for [Know Your Meme](https://knowyourmeme.com).
 
-Currently this project is still in development. While it might be in a state where you can host it publicly, There is likely to be many bugs. Also, KYM constantly screws with the UI so if something breaks please tell me.
+> **This is a modified fork** of [cobra/MeMe](https://codeberg.org/cobra/MeMe) by Skylar Astaroth, maintained by darlopvil since October 2026. See [`NOTICE`](NOTICE) for details. Licensed under the AGPLv3, same as upstream.
 
-# Support
-Join our [Matrix room](https://mto.vern.cc/#/#cobra-frontends:vern.cc) for support and other things related to MeMe
+MeMe fetches pages from Know Your Meme on the server side and serves them back as plain, lightweight HTML. Your browser never talks to KYM or its CDNs: no trackers, no ads, no scripts. Images are proxied through the instance.
 
-# Instances
-See instances.json
+Know Your Meme changes its markup from time to time, which can break individual pages. Known problems and planned features are tracked in the [issue tracker](https://github.com/darlopvil/MeMe/issues).
 
+## Usage
 
-# Run your own instance
-## Dependencies
-This program is written in Guile Scheme.
+Replace `knowyourmeme.com` with the hostname of your MeMe instance in any KYM URL:
 
-You will need need `guile`, `guile-gnutls`, `guile-lib`, and `guile-gcrypt`.
+    https://knowyourmeme.com/memes/navy-seal-copypasta
+    https://<your-instance>/memes/navy-seal-copypasta
 
-## Running
-0. Install the dependencies
-1. Clone the repository using `git clone --recurse-submodules https://git.vern.cc/cobra/MeMe`
-2. Run `guile meme.scm`
-3. Connect to http://localhost:8003 (or point your reverse proxy to it)
-4. Profit
+To do this automatically for every KYM link, use a redirect extension such as [LibRedirect](https://libredirect.github.io/).
 
-## Environment
-`SOURCE_URL` - Link shown as "Source Code" in the footer (default: this fork). If you run a modified version, the AGPL requires pointing it to your modified source.
+## Running your own instance
 
-The following are optional.
+### Docker (recommended)
 
-`PORT` - What port to run on (default `8003`).
+    git clone https://github.com/darlopvil/MeMe.git
+    cd MeMe
+    cp docker-compose.yml.example docker-compose.yml
+    docker compose up -d --build
 
-## Notes
-When using a service manager (e.g. systemd), make sure the stop signal is set to SIGINT, or 2. This will prevent EADDRINUSE.
+MeMe is now available at <http://localhost:8003>. Point your reverse proxy at it to expose it.
 
-# Performance
-## Hardware
-RAM usage seems to max out below 150 MiB (max around 140MiB in production testing, baseline 107MiB).
+`docker-compose.yml` is git-ignored, so you can adapt it to your setup (networks, ports, env vars) without it ending up in a commit.
 
-## Page
-Due to the nature and method of proxying images, the performance on first load is poor when loading a page with many images (PageSpeed Inisghts speed index of 3.3s for a meme list, but 1.2s for an article).
+### Without Docker
 
-After the first load, though, your browser's cache control should kick in, and any subsequent requests for an image are cached. It is recommended to use a separate image cache when using a reverse proxy.
+MeMe is written in [Guile Scheme](https://www.gnu.org/software/guile/). Install the dependencies (Debian/Ubuntu package names shown):
 
-Altogether, the performance listed on PageSpeed Insights is >90 for all pages tested.
+    sudo apt install guile-3.0 guile-library guile-gnutls guile-gcrypt
 
-# Todo
-* Asynchronously run the handler (implement stateless version of run-server)
-* Speed up image proxying somehow
-* Video list page*
-* Video page*
-* User page (it is internally linked)
+Then run it from the repository root:
 
-\*Videos might not be added because they use embeds from stuff like tiktok and I don't know how to scrape tiktok (use existing proxitok instance?)
+    guile meme.scm
 
-# Known issues
-1. It's slow
-2. It could probably be faster
+When running under a service manager (e.g. systemd), set the stop signal to `SIGINT` (2) so the server releases its socket cleanly. Otherwise restarts can fail with `EADDRINUSE`.
+
+## Configuration
+
+| Variable     | Default                             | Description |
+|--------------|-------------------------------------|-------------|
+| `PORT`       | `8003`                              | Port to listen on. |
+| `SOURCE_URL` | `https://github.com/darlopvil/MeMe` | Link shown as "Source Code" in the footer. If you run a modified version, the AGPL requires pointing it to your modified source. |
+
+## Contributing
+
+Bug reports and feature requests go to the [issue tracker](https://github.com/darlopvil/MeMe/issues). If a page stops rendering, include the KYM URL that fails.
+
+## Credits and license
+
+MeMe was created by Skylar Astaroth ([cobra/MeMe](https://codeberg.org/cobra/MeMe), originally hosted at `git.vern.cc`). This fork keeps all original copyright notices.
+
+Licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). If you run a modified version of MeMe as a network service, you must offer its source code to your users.
