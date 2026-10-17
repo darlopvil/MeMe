@@ -1,4 +1,5 @@
 ;; Copyright (C) 2024-2025 Skylar Astaroth <cobra@vern.cc>
+;; Copyright (C) 2026 darlopvil
 ;;
 ;; This file is part of MeMe
 ;;
@@ -99,13 +100,15 @@
               (li (@ (class "episodes"))
                 (a (@ (href "/episodes"))))))))
 
+(define source-url
+  (or (getenv "SOURCE_URL") "https://github.com/darlopvil/MeMe"))
+
 (define footer
   `(footer
      (div (@ (class "box footer"))
-       (p (a (@ (href "https://git.vern.cc/cobra/MeMe")) "Source Code"))
-       ,(if (getenv "PATCHES_URL")
-          `(p (a (@ (href ,(getenv "PATCHES_URL"))) "Patches"))
-          '()))))
+       (p (a (@ (href ,source-url)) "Source Code")
+          " · Fork of "
+          (a (@ (href "https://codeberg.org/cobra/MeMe")) "cobra/MeMe")))))
 
 (define (pagination-template pagination)
   (if (not (equal? pagination '()))

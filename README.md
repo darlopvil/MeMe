@@ -1,6 +1,8 @@
 # MeMe
 MeMe is a privacy-respecting frontend to Know Your Meme
 
+> **This is a modified fork** of [cobra/MeMe](https://codeberg.org/cobra/MeMe) by Skylar Astaroth, maintained by darlopvil since October 2026. See `NOTICE` for details. Licensed under the AGPLv3, same as upstream.
+
 Currently this project is still in development. While it might be in a state where you can host it publicly, There is likely to be many bugs. Also, KYM constantly screws with the UI so if something breaks please tell me.
 
 # Support
@@ -24,7 +26,7 @@ You will need need `guile`, `guile-gnutls`, `guile-lib`, and `guile-gcrypt`.
 4. Profit
 
 ## Environment
-`PATCHES_URL` - Link to any patches that were applied. Necessary if there are any. Do not set if there aren't.
+`SOURCE_URL` - Link shown as "Source Code" in the footer (default: this fork). If you run a modified version, the AGPL requires pointing it to your modified source.
 
 The following are optional.
 

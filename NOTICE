@@ -1,0 +1,17 @@
+MeMe - a privacy-respecting frontend to Know Your Meme
+
+This is a modified version of MeMe.
+
+Original work:
+  Copyright (C) 2024-2025 Skylar Astaroth <cobra@vern.cc>
+  https://codeberg.org/cobra/MeMe (mirror of https://git.vern.cc/cobra/MeMe)
+
+Modifications:
+  Copyright (C) 2026 darlopvil
+  https://github.com/darlopvil/MeMe
+  Forked on 2026-10-17 from upstream commit 4b3b282. The full list of
+  changes is the git history of this repository from that commit onward.
+
+Both the original work and the modifications are licensed under the
+GNU Affero General Public License, version 3 or (at your option) any
+later version. See LICENSE.
