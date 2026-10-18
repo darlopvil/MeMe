@@ -34,6 +34,7 @@
             categories-page
             photos-page
             photo-page
+            article-page
             proxy-page))
 
 (define (pages? components str)
@@ -143,6 +144,10 @@
 (define (photo-page path)
   (display "; \tHandler: photo-page")
   (generic-page photo-template path))
+
+(define (article-page path)
+  (display "; \tHandler: article-page")
+  (generic-page article-template path))
 
 (define (proxy-page query)
   (display "; \tHandler: proxy-page")

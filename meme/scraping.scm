@@ -31,6 +31,7 @@
             get-categories
             get-photos
             get-photo
+            get-article
             get-pagination
             get-title))
 
@@ -99,18 +100,43 @@
           (list-set! ret i (modify-list e pred proc))))))
   ret)
 
+;; Hosts the image proxy accepts (keep in sync with proxy-page).
+(define proxyable-prefixes
+  '("https://i.kym-cdn.com/" "https://a.kym-cdn.com/"
+    "https://i.ytimg.com/" "https://knowyourmeme.com/"))
+
+(define (proxyable? url)
+  (not (null? (filter (lambda (p) (string-prefix? p url))
+                      proxyable-prefixes))))
+
+;; Real source of an <img>: the lazy-load data-src, the decoded NSFW
+;; source, or a plain src, in that order. Protocol-relative URLs get
+;; https so they can be matched against the proxy allowlist.
+(define (img-source e)
+  (let ((url (cond ((attr 'data-src e) => identity)
+                   ((attr 'data-nsfw-src e) => decode-nsfw-src)
+                   ((attr 'src e) => identity)
+                   (else #f))))
+    (if (and url (string-prefix? "//" url))
+      (string-append "https:" url)
+      url)))
+
+;; Images on proxyable hosts go through /proxy. Anything else (imgur,
+;; embedded Scratch projects, ...) becomes a plain link instead of a
+;; broken image, so the browser never contacts third parties on its own.
 (define (img-replace nodeset)
   (modify-list
     nodeset (node-typeof? 'img)
     (lambda (e)
-      `(img (@ (src ,(proxy
-                       (car (append
-                              ((sxpath '(@ data-src *text*)) e)
-                              (map (lambda (s)
-                                     (utf8->string
-                                       (base64-decode s base64-alphabet #f #f)))
-                                   ((sxpath '(@ data-nsfw-src *text*)) e))))))
-               (loading "lazy"))))))
+      (let ((url (img-source e)))
+        (cond ((not url) '())
+              ((proxyable? url)
+               `(img (@ (src ,(proxy url))
+                        (alt ,(or (attr 'alt e) ""))
+                        (loading "lazy"))))
+              (else
+               `(a (@ (href ,url) (class "external-media"))
+                   ,(string-append "[external media: " url "]"))))))))
 
 (define (script-kill nodeset)
   (modify-list
@@ -323,6 +349,33 @@
     (car ((sxpath (append pref2 '((div (@ class (equal? "row")) 2) p abbr)))
           d))))
 
+
+;; Editorial article page:
+;; (section title image authors published body tags)
+;;   section    the <h4> holding the link to the editorial section, or #f
+;;   title      article title
+;;   image      header image URL, or #f
+;;   authors    list of author <a> nodes (may be empty)
+;;   published  publication date text, or ""
+;;   body       cleaned body <div>
+;;   tags       the tags <center> node, or #f
+;; Returns #f when the page does not look like an article.
+(define (get-article d)
+  (let ((art (select-first 'article "article" d)))
+    (and art
+      (let* ((h4 ((sxpath '(h4)) art))
+             (img (select-first 'img "main-image" art))
+             (byline (select-first 'div "blue-links" art))
+             (date (select-first 'span "date-info" art))
+             (body (select-first 'div "body" art)))
+        (list
+          (if (null? h4) #f (car h4))
+          (text-of (select 'h1 "content-title" art))
+          (and img (or (attr 'src img) (attr 'src-large img)))
+          (if byline ((sxpath '(// a)) byline) '())
+          (if date (text-of (list date)) "")
+          (if body (car (clean-bodycopy (list body))) '(div))
+          (select-first 'center "tags" art))))))
 
 (define (get-pagination d)
   (if (not (equal? '() ((sxpath '(// (* (@ class (equal? "pager"))))) d)))

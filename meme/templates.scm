@@ -28,7 +28,8 @@
             memes-template
             categories-template
             photos-template
-            photo-template))
+            photo-template
+            article-template))
 
 ;; Path (with query string) of the request being rendered; set by
 ;; generic-page so templates can build links back to the same listing.
@@ -337,6 +338,31 @@
                                       (loading "lazy")))))
                          items)))
              ,(gallery-pager page (length items) total)
+             ,footer))))
+
+(define (article-template body)
+  (let ((a (get-article body)))
+    `(html ,(html-head body)
+           (body
+             ,heading
+             ,(if (not a)
+                `(div (@ (class "box meme"))
+                   (p "Could not read this article."))
+                `((div (@ (class "box meme"))
+                    ,(if (list-ref a 2)
+                       `(img (@ (src ,(proxy (list-ref a 2)))
+                                (loading "lazy")))
+                       '())
+                    ,(or (list-ref a 0) '())
+                    (h1 ,(list-ref a 1))
+                    (div (@ (class "subdiv"))
+                      ,(if (null? (list-ref a 3))
+                         '()
+                         `(p "By " ,@(list-ref a 3)))
+                      (p ,(list-ref a 4))))
+                  (div (@ (class "box meme-body"))
+                    ,(list-ref a 5)
+                    ,(or (list-ref a 6) '()))))
              ,footer))))
 
 (define (photo-template body)

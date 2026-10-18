@@ -1,4 +1,5 @@
 ;; Copyright (C) 2024-2025 Skylar Astaroth <cobra@vern.cc>
+;; Copyright (C) 2026 darlopvil
 ;;
 ;; This file is part of MeMe
 ;;
@@ -126,8 +127,11 @@
               (pages? path-components "deadpool")
               (pages? path-components "all")))
        (memes-page uristring))
-      ((or (equal? (car path-components) "memes")
-           (equal? (car path-components) "editorials"))
+      ;; Editorial articles: /editorials/<section>/<slug>. A bare
+      ;; /editorials/<slug> is redirected there by KYM.
+      ((equal? (car path-components) "editorials")
+       (article-page uristring))
+      ((equal? (car path-components) "memes")
        (meme-page uristring))
       ((and (equal? (car path-components) "categories")
             (equal? (length path-components) 1))
