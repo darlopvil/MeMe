@@ -33,6 +33,7 @@
             get-editorials
             get-meme
             get-entry-extras
+            get-video
             get-memes
             get-categories
             get-photos
@@ -486,6 +487,41 @@
                  (append (section-heading (if (null? h2) #f (car h2)))
                          (list (grid-items photos "photo" img-title)
                                (gallery-link photos)))))))))
+
+;; Single video page: an alist with
+;;   entry     (href title) of the entry the video belongs to, or #f
+;;   title     video title
+;;   player    the embed (Invidious / Nitter / ProxiTok frame, or a link
+;;             to the source when there is no usable embed), or #f
+;;   previous  href of the previous video in the gallery, or #f
+;;   next      href of the next video, or #f
+;;   gallery   href of the entry's video gallery, or #f
+;; Returns #f when the page does not look like a video page.
+(define (get-video d)
+  (let ((art (select-first 'article "media" d)))
+    (and art
+      (let* ((header (select-first 'div "collection-header" art))
+             (entry-a (and header (let ((a ((sxpath '(a)) header)))
+                                    (if (null? a) #f (car a)))))
+             (h2 ((sxpath '(// h2)) art))
+             (contents (select-first 'div "contents" art))
+             (embeds (if contents
+                       (filter embed-node? ((sxpath '(// *)) contents))
+                       '()))
+             (info (select-first 'span "date-info" art))
+             (source (and info (attr 'data-via-link info)))
+             (link-of (lambda (id)
+                        (let ((a (by-id 'a id art)))
+                          (and a (attr 'href a))))))
+        `((entry . ,(and entry-a
+                         (list (attr 'href entry-a) (text-of (list entry-a)))))
+          (title . ,(if (null? h2) "" (text-of (list (car h2)))))
+          (player . ,(cond ((pair? embeds) (embed-node->html (car embeds)))
+                           (source (external-link source "source"))
+                           (else #f)))
+          (previous . ,(link-of "previous-link"))
+          (next . ,(link-of "next-link"))
+          (gallery . ,(link-of "gallery-link")))))))
 
 (define (get-memes d)
   (define pref '(html body main article html head article section))

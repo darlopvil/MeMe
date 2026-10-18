@@ -138,6 +138,18 @@
                  char-set:digit 0 1)
                0))
        (photo-page uristring))
+      ;; A single video: /videos/<id>-<slug>
+      ((and (equal? (car path-components) "videos")
+            (= (length path-components) 2)
+            (char-numeric? (string-ref (cadr path-components) 0)))
+       (video-page uristring))
+      ;; Video listings: /videos, /videos/trending, /memes/<slug>/videos,
+      ;; with their /page/N and tab sub-paths
+      ((member "videos" path-components)
+       (videos-page uristring))
+      ;; KYM's own episodes use the editorial list layout
+      ((equal? (car path-components) "episodes")
+       (editorials-page uristring))
       ((and (equal? (car path-components) "memes")
             (or
               (equal? (length path-components) 1)

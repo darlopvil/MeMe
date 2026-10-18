@@ -38,6 +38,8 @@
             photo-page
             article-page
             search-page
+            videos-page
+            video-page
             proxy-page))
 
 (define (pages? components str)
@@ -208,6 +210,16 @@
 (define (search-page path)
   (display "; \tHandler: search-page")
   (generic-page photos-template path))
+
+;; Video listings (/videos, /videos/trending, /memes/<slug>/videos) use
+;; the same gallery markup as image listings.
+(define (videos-page path)
+  (display "; \tHandler: videos-page")
+  (generic-page photos-template path))
+
+(define (video-page path)
+  (display "; \tHandler: video-page")
+  (generic-page video-template path))
 
 (define (article-page path)
   (display "; \tHandler: article-page")

@@ -454,6 +454,16 @@ ul.navbar li.search input {
 	width: 10em;
 }
 
+.video-page.box {
+	padding: 0.5em 2% 1em 2%;
+	width: calc(94% - 10px);
+	text-align: center;
+}
+
+.video-page.box h1 {
+	word-break: break-word;
+}
+
 .entry-grid.box {
 	padding: 0.5em 2% 1em 2%;
 	width: calc(94% - 10px);

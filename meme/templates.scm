@@ -29,7 +29,8 @@
             categories-template
             photos-template
             photo-template
-            article-template))
+            article-template
+            video-template))
 
 ;; Path (with query string) of the request being rendered; set by
 ;; generic-page so templates can build links back to the same listing.
@@ -87,6 +88,12 @@
                  (li (a (@ (href "/photos/least-liked")) "least likes"))
                  (li (a (@ (href "/photos/most-viewed")) "most views"))
                  (li (a (@ (href "/photos/templates")) "template")))))
+           (li (@ (class "videos"))
+             (a (@ (href "/videos")) "videos")
+             (div (@ (class "dropdown box"))
+               (ul
+                 (li (a (@ (href "/videos/trending")) "trending"))
+                 (li (a (@ (href "/episodes")) "episodes")))))
            (li (@ (class "editorials"))
              (a (@ (href "/editorials")) "editorial")
              (div (@ (class "dropdown box"))
@@ -429,6 +436,32 @@
                   (div (@ (class "box meme-body"))
                     ,(list-ref a 5)
                     ,(or (list-ref a 6) '()))))
+             ,footer))))
+
+(define (video-template body)
+  (let ((v (get-video body)))
+    `(html ,(html-head body)
+           (body
+             ,heading
+             ,(if (not v)
+                `(div (@ (class "box meme"))
+                   (p "Could not read this video."))
+                (let* ((entry (assq-ref v 'entry))
+                       (nav (filter pair?
+                                    (list (let ((h (assq-ref v 'previous)))
+                                            (if h `(a (@ (href ,h)) "◄ Previous") '()))
+                                          (let ((h (assq-ref v 'gallery)))
+                                            (if h `(a (@ (href ,h)) "View gallery") '()))
+                                          (let ((h (assq-ref v 'next)))
+                                            (if h `(a (@ (href ,h)) "Next ►") '()))))))
+                  `(div (@ (class "box video-page"))
+                     ,(if entry `(p (a (@ (href ,(car entry))) ,(cadr entry))) '())
+                     (h1 ,(assq-ref v 'title))
+                     ,(or (assq-ref v 'player) '())
+                     ,(if (null? nav) '()
+                        `(p (@ (class "video-nav"))
+                            ,(car nav)
+                            ,@(apply append (map (lambda (n) (list " · " n)) (cdr nav))))))))
              ,footer))))
 
 (define (photo-template body)
