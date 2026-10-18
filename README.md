@@ -8,6 +8,45 @@ MeMe fetches pages from Know Your Meme on the server side and serves them back a
 
 Know Your Meme changes its markup from time to time, which can break individual pages. Known problems and planned features are tracked in the [issue tracker](https://github.com/darlopvil/MeMe/issues).
 
+## What this fork adds
+
+Compared to upstream (cobra/MeMe at `4b3b282`), this fork covers most of the site and fixes the pages that had stopped working.
+
+**Pages**
+
+- Search for every context (entries, images, videos, news, editorials, users), with KYM's sort options and pagination.
+- Editorials and news: listings and full articles. Also KYM's episodes.
+- Video listings and single video pages, with previous / next links.
+- User profiles, with links to each user's images and videos.
+- Comments on entries, images, videos and articles, rendered on the server in batches of 20, with nested replies and collapsed sensitive comments.
+- Entry pages show related entries, sub-entries and strips of recent images and videos.
+- Image and video pages show who uploaded them. Image pages also show their tags and KYM's notes.
+- Random entry, image and video.
+- Complete navigation bar: confirmed, submissions, trending, image sorting, episodes, news and a search box.
+
+**Privacy**
+
+- Embeds are served by self-hosted frontends: TikToks by ProxiTok, tweets and video tweets by Nitter, YouTube videos by Invidious, Imgur images by rimgo and Tumblr images by Priviblur.
+- Links to Twitter/X, YouTube, Reddit, TikTok, Imgur, Tenor and Tumblr point at the configured frontends.
+- Images from KYM's CDNs, YouTube thumbnails and Tenor GIFs go through the instance's image proxy. Any other third-party content becomes a labelled link instead of being loaded. KYM's Google Trends widget becomes a plain link.
+- User-written comment HTML is reduced to a whitelist of safe elements and attributes.
+- A `robots.txt` asks crawlers not to index the instance.
+
+**Reliability**
+
+- Scrapers select elements by class instead of fixed positions, so extra wrapper elements in KYM's markup no longer break pages.
+- Requests are served concurrently: one thread per connection, at most 32 at once, and a 504 page after 60 seconds if KYM does not answer.
+- Layout changes and upstream failures produce readable error pages instead of bare 500s. A KYM outage no longer makes open tabs reload every second.
+- Upstream connections are always closed. The image proxy percent-encodes URLs, follows redirects internally and upgrades plain http.
+- Redirects keep their query string, and paths under `/sensitive/` work.
+- The server exits immediately on SIGINT or SIGTERM, so `docker stop` does not wait for the kill timeout.
+- Each request is logged as a single `key=value` line, with its error if any.
+
+**Deployment**
+
+- Dockerfile building from the checked-out source (non-root user, healthcheck) and a `docker-compose.yml.example`.
+- The footer's source link points to the code actually running, as the AGPL requires (`SOURCE_URL`), and `NOTICE` records the modifications.
+
 ## Usage
 
 Replace `knowyourmeme.com` with the hostname of your MeMe instance in any KYM URL:
@@ -40,7 +79,7 @@ Then run it from the repository root:
 
     guile meme.scm
 
-When running under a service manager (e.g. systemd), set the stop signal to `SIGINT` (2) so the server releases its socket cleanly. Otherwise restarts can fail with `EADDRINUSE`.
+MeMe exits immediately on `SIGINT` or `SIGTERM`, so it can run under any service manager (e.g. systemd) with the default stop signal.
 
 ## Configuration
 
