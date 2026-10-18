@@ -32,7 +32,8 @@
             photo-template
             article-template
             video-template
-            profile-template))
+            profile-template
+            comments-template))
 
 ;; Path (with query string) of the request being rendered; set by
 ;; generic-page so templates can build links back to the same listing.
@@ -360,6 +361,7 @@
                               ,(append '(span) (list-ref l 4))))
                          (car (last-pair meme))))
                 '())
+             ,(comments-link body)
              ,footer))))
 
 (define (memes-template body)
@@ -482,6 +484,7 @@
                   (div (@ (class "box meme-body"))
                     ,(list-ref a 5)
                     ,(or (list-ref a 6) '()))))
+             ,(comments-link body)
              ,footer))))
 
 (define (video-template body)
@@ -509,6 +512,7 @@
                         `(p (@ (class "video-nav"))
                             ,(car nav)
                             ,@(apply append (map (lambda (n) (list " · " n)) (cdr nav))))))))
+             ,(comments-link body)
              ,footer))))
 
 ;; "Uploaded by <user>" line for image and video pages, or nothing
@@ -518,6 +522,94 @@
       `(p (@ (class "uploader"))
           "Uploaded by " (a (@ (href ,(kym->local (cdr u)))) ,(car u)))
       '())))
+
+;; Link from an entry, image, video or article to its comments page,
+;; shown only when there are comments. The count is in the page itself,
+;; so this costs no extra request.
+(define (comments-link body)
+  (let ((n (get-comment-count body)))
+    (if (> n 0)
+      `(div (@ (class "box comments-link"))
+         (a (@ (href ,(string-append (current-base-path) "/comments")))
+            ,(string-append "Comments (" (number->string n) ")")))
+      '())))
+
+;; "doge", "wikipedia donation banner captions": a readable name for a
+;; page from the last segment of its path.
+(define (path-label path)
+  (let* ((seg (car (last-pair (string-split path #\/))))
+         (m (string-match "^[0-9]+-" seg)))
+    (string-join (string-split (if m (match:suffix m) seg) #\-) " ")))
+
+(define (comment-item c children-of)
+  (let ((kids (children-of (assq-ref c 'id)))
+        (body `(div (@ (class "comment-body")) ,@(assq-ref c 'body))))
+    `(li (@ (class "comment"))
+       (div (@ (class "comment-meta"))
+         ,(if (assq-ref c 'icon)
+            `(img (@ (class "comment-avatar") (src ,(proxy (assq-ref c 'icon)))
+                     (alt "") (loading "lazy")))
+            '())
+         ,(if (assq-ref c 'user-link)
+            `(a (@ (href ,(kym->local (assq-ref c 'user-link))))
+                (b ,(assq-ref c 'username)))
+            `(b ,(assq-ref c 'username)))
+         " · " ,(assq-ref c 'created)
+         ,(string-append " · ▲ " (number->string (assq-ref c 'likes))
+                         " ▼ " (number->string (assq-ref c 'dislikes))))
+       ,(if (assq-ref c 'nsfw?)
+          `(details (summary "Sensitive comment") ,body)
+          body)
+       ,(if (null? kids)
+          '()
+          `(ul (@ (class "comment-replies"))
+             ,@(map (lambda (k) (comment-item k children-of)) kids))))))
+
+;; PARENT is the page the comments belong to, OFFSET how many comments
+;; came before this batch. Replies follow their parent; a reply whose
+;; parent is in an earlier batch is shown at the top level, like KYM does.
+(define (comments-template parent offset data)
+  (let* ((parsed (get-comments data))
+         (total (car parsed))
+         (comments (cdr parsed))
+         (ids (map (lambda (c) (assq-ref c 'id)) comments))
+         (root? (lambda (c) (let ((p (assq-ref c 'parent)))
+                              (or (not p) (not (member p ids))))))
+         (children-of (lambda (id)
+                        (filter (lambda (c) (equal? (assq-ref c 'parent) id))
+                                comments)))
+         (next (+ offset (length comments)))
+         (label (path-label parent))
+         (base (string-append parent "/comments")))
+    `(html ,(html-head (string-append "Comments: " label))
+           (body
+             ,heading
+             (div (@ (class "box comments-page"))
+               (h1 "Comments " (small ,(string-append "(" (number->string total) ")")))
+               (p (a (@ (href ,parent)) ,(string-append "‹ Back to " label)))
+               ,(if (null? comments)
+                  '(p "No comments.")
+                  `(ul (@ (class "comment-list"))
+                     ,@(map (lambda (c) (comment-item c children-of))
+                            (filter root? comments)))))
+             ,(if (or (> offset 0) (and (pair? comments) (< next total)))
+                `(div (@ (class "wide-pagination"))
+                   (div (@ (class "pagination box"))
+                     (ul (@ (class "pager"))
+                       (li ,(if (> offset 0)
+                              `(a (@ (class "page-button") (href ,base)) "« First")
+                              '()))
+                       (li ,(string-append (number->string (min (1+ offset) total))
+                                           "–" (number->string (min next total))
+                                           " of " (number->string total)))
+                       (li ,(if (and (pair? comments) (< next total))
+                              `(a (@ (class "page-button")
+                                     (href ,(string-append base "?offset="
+                                                           (number->string next))))
+                                  "Next ›")
+                              '())))))
+                '())
+             ,footer))))
 
 ;; " · " between the elements of LST
 (define (interleave lst)
@@ -590,4 +682,5 @@
                    (img (@ (alt ,(cadr photo))
                            (src ,(proxy (caddr photo)))
                            (loading "lazy"))))))
+             ,(comments-link body)
              ,footer))))

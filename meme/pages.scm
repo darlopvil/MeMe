@@ -26,6 +26,8 @@
   #:use-module (web uri)
   #:use-module (ice-9 receive)
   #:use-module (ice-9 string-fun)
+  #:use-module ((rnrs bytevectors) #:select (bytevector? utf8->string))
+  #:use-module ((json parser) #:select (json-string->scm))
   #:export (pages?
             pass-signals
             error-page
@@ -41,6 +43,7 @@
             videos-page
             video-page
             profile-page
+            comments-page
             proxy-page))
 
 (define (pages? components str)
@@ -118,17 +121,20 @@
 ;; Parse and render an upstream page. Scrapers rely on KYM's markup, so a
 ;; layout change makes them throw: turn that into a readable error page
 ;; and a single log line instead of a bare 500 with a backtrace.
+;; Links back to KYM become links within MeMe.
+(define (localize html)
+  (string-replace-substring
+    (string-replace-substring html "https://knowyourmeme.com:443" "")
+    "https://knowyourmeme.com" ""))
+
 (define (render-page procedure path body)
   (catch #t
     (lambda ()
       (let ((doc (html->sxml-0nf body #:strict? #t)))
         (values good-response
-                (string-replace-substring
-                  (string-replace-substring
-                    (shtml->html (parameterize ((current-path path))
-                                   (procedure doc)))
-                    "https://knowyourmeme.com:443" "")
-                  "https://knowyourmeme.com" ""))))
+                (localize
+                  (shtml->html (parameterize ((current-path path))
+                                 (procedure doc)))))))
     (lambda (key . args)
       (pass-signals key args)
       (log-error "render-error" key args)
@@ -226,6 +232,64 @@
 (define (profile-page path)
   (display " handler=profile-page")
   (generic-page profile-template path))
+
+;; "offset=40&x=y" -> 40, or 0
+(define (query-offset query)
+  (let loop ((params (string-split query #\&)))
+    (cond ((null? params) 0)
+          ((string-prefix? "offset=" (car params))
+           (let ((n (string->number (substring (car params) 7))))
+             (if (and n (exact-integer? n) (>= n 0)) n 0)))
+          (else (loop (cdr params))))))
+
+;; Comments of an entry, image, video or article: <page>/comments, with
+;; ?offset=N for later batches. KYM loads them with JavaScript from
+;; <page>/comments.json; MeMe fetches that JSON and renders plain HTML.
+(define (comments-page path)
+  (display " handler=comments-page")
+  (let* ((q (string-index path #\?))
+         (base (if q (substring path 0 q) path))
+         (parent (string-drop-right base (string-length "/comments")))
+         (offset (if q (query-offset (substring path (1+ q))) 0)))
+    (receive (resp body)
+        (catch #t
+          (lambda ()
+            (fetch (string-append "https://knowyourmeme.com" parent
+                                  "/comments.json?offset="
+                                  (number->string offset))
+                   #:headers (cons `(accept . ,(parse-header 'accept
+                                                             "application/json"))
+                                   user-agent-header)))
+          (lambda (key . args)
+            (pass-signals key args)
+            (log-error "upstream-error" key args)
+            (values #f key)))
+      (cond
+        ((not resp)
+         (display " status=502")
+         (values (build-response #:code 502
+                                 #:headers `((content-type . (text/html))))
+                 (shtml->html (eof-template path body))))
+        ((not (= (response-code resp) 200))
+         (display (string-append " status="
+                                 (number->string (response-code resp))))
+         (error-page (response-code resp)))
+        (else
+         (display " status=200")
+         (catch #t
+           (lambda ()
+             (let ((data (json-string->scm
+                           (if (bytevector? body) (utf8->string body) body))))
+               (values good-response
+                       (localize
+                         (shtml->html (parameterize ((current-path base))
+                                        (comments-template parent offset
+                                                           data)))))))
+           (lambda (key . args)
+             (pass-signals key args)
+             (log-error "render-error" key args)
+             (error-page 500 "MeMe could not read the comments Know Your Meme sent."
+                         path))))))))
 
 (define (article-page path)
   (display " handler=article-page")

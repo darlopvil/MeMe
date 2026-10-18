@@ -76,6 +76,12 @@
        (cond ((equal? (car path-components) "memes") (meme-page uristring))
              ((equal? (car path-components) "photos") (photo-page uristring))
              (else (video-page uristring))))
+      ;; Comments of an entry, image, video or article
+      ((and (>= (length path-components) 3)
+            (equal? (car (last-pair path-components)) "comments")
+            (member (car path-components)
+                    '("memes" "photos" "videos" "news" "editorials")))
+       (comments-page uristring))
       ;; User profiles. KYM redirects short names (/users/don) to the
       ;; canonical one, and generic-page relays that redirect.
       ((and (equal? (car path-components) "users")

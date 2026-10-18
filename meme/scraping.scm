@@ -22,6 +22,7 @@
   #:use-module (ice-9 regex)
   #:use-module (web uri)
   #:use-module (ice-9 string-fun)
+  #:use-module ((htmlprag) #:select (html->shtml))
   #:use-module ((sxml xpath)
                 #:renamer (lambda (p)
                             (if (eq? 'filter p)
@@ -40,6 +41,8 @@
             get-photo
             get-profile
             get-uploader
+            get-comment-count
+            get-comments
             get-article
             get-pagination
             get-title))
@@ -781,6 +784,99 @@
 ;; Raw text content of NODE (no whitespace squashing, unlike text-of).
 (define (text-of* node)
   (apply string-append (filter string? ((sxpath '(// *text*)) node))))
+
+;; N in the "Comments (N)" heading of a page's comment section, or 0.
+;; Only the section itself: video pages repeat a comments_count span in
+;; their toolbar.
+(define (get-comment-count d)
+  (let* ((section (by-id 'div "comments" d))
+         (span (and section (select-first 'span "comments_count" section)))
+         (digits (and span (string-filter char-set:digit
+                                          (text-of (list span))))))
+    (or (and digits (string->number digits)) 0)))
+
+;; Comment HTML is written by users, so after the usual cleanup (images
+;; through the proxy, embeds through the frontends, no scripts) only a
+;; whitelist of inline/text elements and attributes survives. Unknown
+;; elements are unwrapped, dangerous ones dropped with their content.
+(define comment-tags
+  '(p br a i em b strong u s del ins blockquote q ul ol li code pre span
+    sub sup small h3 h4 h5 h6 hr img figure iframe))
+(define comment-attrs
+  '((a href class) (img src alt loading)
+    (iframe src loading frameborder allowfullscreen) (figure class)))
+(define comment-dropped
+  '(script style form input button textarea select option object embed
+    svg math head title meta link noscript template frame frameset))
+
+(define (safe-href? h)
+  (or (string-prefix? "/" h) (string-prefix? "#" h)
+      (string-prefix? "https://" h) (string-prefix? "http://" h)))
+
+(define (sanitize-comment-node n)
+  (cond ((string? n) (list n))
+        ((not (pair? n)) '())
+        ((eq? (car n) '*ENTITY*) (list n))
+        ((eq? (car n) '*TOP*) (append-map* sanitize-comment-node (cdr n)))
+        ((not (symbol? (car n))) '())
+        ((memq (car n) '(@ *COMMENT* *PI* *DECL*)) '())
+        ((memq (car n) comment-dropped) '())
+        ((memq (car n) comment-tags)
+         (let* ((keep (or (assq-ref comment-attrs (car n)) '()))
+                (given (if (and (pair? (cdr n)) (pair? (cadr n))
+                                (eq? (caadr n) '@))
+                         (cdadr n)
+                         '()))
+                (attrs (filter (lambda (a)
+                                 (and (pair? a) (memq (car a) keep)
+                                      (pair? (cdr a)) (string? (cadr a))
+                                      (or (not (eq? (car a) 'href))
+                                          (safe-href? (cadr a)))))
+                               given))
+                (attrs (if (and (eq? (car n) 'a) (assq 'href attrs)
+                                (string-prefix? "http" (cadr (assq 'href attrs))))
+                         (append attrs '((rel "nofollow noopener noreferrer")))
+                         attrs)))
+           (list `(,(car n) ,@(if (null? attrs) '() `((@ ,@attrs)))
+                   ,@(append-map* sanitize-comment-node (node-children n))))))
+        (else (append-map* sanitize-comment-node (node-children n)))))
+
+;; The JSON "comment" field is HTML escaped once more ("&lt;p&gt;..."):
+;; parsing it yields the real HTML as text, which is parsed again.
+(define (comment-body escaped)
+  (let* ((html (apply string-append
+                      (map (lambda (n)
+                             (cond ((string? n) n)
+                                   ((and (pair? n) (eq? (car n) '*ENTITY*))
+                                    (string-append "&" (caddr n) ";"))
+                                   (else "")))
+                           (cdr (html->shtml escaped)))))
+         (nodes (cdr (html->shtml html))))
+    (append-map* sanitize-comment-node (clean-bodycopy nodes))))
+
+;; KYM's comments.json, as parsed by guile-json, into
+;; (total . comments), each comment an alist with id, parent, username,
+;; user-link, icon, created, likes, dislikes, nsfw? and body (nodes).
+(define (get-comments data)
+  (define (field c k) (let ((v (assoc-ref c k))) (if (eq? v 'null) #f v)))
+  (let ((comments (or (assoc-ref data "comments") #())))
+    (cons (or (assoc-ref data "total_count") 0)
+          (map (lambda (c)
+                 (let ((icon (or (field c "user_icon") "")))
+                   `((id . ,(field c "id"))
+                     (parent . ,(field c "parent_id"))
+                     (username . ,(or (field c "username") "?"))
+                     (user-link . ,(field c "user_link"))
+                     (icon . ,(cond ((string-prefix? "/" icon)
+                                     (string-append "https://knowyourmeme.com" icon))
+                                    ((string-null? icon) #f)
+                                    (else icon)))
+                     (created . ,(or (field c "created_at") ""))
+                     (likes . ,(or (field c "likes") 0))
+                     (dislikes . ,(or (field c "dislikes") 0))
+                     (nsfw? . ,(eq? (field c "nsfw") #t))
+                     (body . ,(comment-body (or (field c "comment") ""))))))
+               (vector->list comments)))))
 
 ;; Editorial article page:
 ;; (section title image authors published body tags)

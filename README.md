@@ -34,7 +34,7 @@ MeMe is now available at <http://localhost:8003>. Point your reverse proxy at it
 
 MeMe is written in [Guile Scheme](https://www.gnu.org/software/guile/). Install the dependencies (Debian/Ubuntu package names shown):
 
-    sudo apt install guile-3.0 guile-library guile-gnutls guile-gcrypt
+    sudo apt install guile-3.0 guile-library guile-gnutls guile-gcrypt guile-json
 
 Then run it from the repository root:
 
