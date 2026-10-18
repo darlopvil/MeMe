@@ -250,8 +250,37 @@
              ,(pagination-template (get-pagination body)))
            ,footer)))
 
+;; Path of the page being rendered, without query string.
+(define (current-base-path)
+  (let* ((p (current-path)) (q (string-index p #\?)))
+    (if q (substring p 0 q) p)))
+
+(define (entry-grid items)
+  `(ul (@ (class "entry-grid-list"))
+     ,(map (lambda (i)
+             `(li (a (@ (href ,(car i)) (title ,(cadr i)))
+                     (img (@ (src ,(proxy (caddr i))) (alt ,(cadr i)) (loading "lazy")))
+                     (span ,(cadr i)))))
+           items)))
+
+;; A thumbnail strip: related entries, sub-entries, recent videos or
+;; recent images. ID and ANCHOR keep KYM's fragment links working.
+(define* (entry-grid-box block #:key id anchor more)
+  (let ((items (and block (caddr block)))
+        (gallery (and block (> (length block) 3) (list-ref block 3))))
+    (if (or (not block) (and (null? items) (not gallery)))
+      '()
+      `(div (@ (class "box entry-grid") ,@(if id `((id ,id)) '()))
+         (h2 ,@(if anchor `((@ (id ,anchor))) '())
+             ,(car block) " " (small ,(cadr block)))
+         ,(if (null? items)
+            `(p (a (@ (href ,gallery)) "View gallery")
+                " (marked by Know Your Meme as not suitable for public viewing)")
+            `(,(entry-grid items) ,(or more '())))))))
+
 (define (meme-template body)
-  (let ((meme (get-meme body)))
+  (let ((meme (get-meme body))
+        (extras (get-entry-extras body)))
     `(html ,(html-head body)
            (body
              ,heading
@@ -266,6 +295,15 @@
              (div (@ (class "box meme-body"))
                 ,(append '(div)
                          (list-ref meme 5)))
+             ,(map entry-grid-box (assq-ref extras 'related))
+             ,(entry-grid-box (assq-ref extras 'videos)
+                              #:id "videos" #:anchor "recent-videos"
+                              #:more `(p (a (@ (href ,(string-append (current-base-path) "/videos")))
+                                            "View all videos")))
+             ,(entry-grid-box (assq-ref extras 'photos)
+                              #:id "photos" #:anchor "recent-images"
+                              #:more `(p (a (@ (href ,(string-append (current-base-path) "/photos")))
+                                            "View all images")))
              ,(if (not (equal? (car (last-pair meme)) '()))
                 `(div (@ (class "collection-wrapper"))
                    ,(map (lambda (l)

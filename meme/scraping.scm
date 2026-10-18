@@ -29,8 +29,10 @@
                               p)))
   #:export (proxy
             proxyable?
+            https-upgrade
             get-editorials
             get-meme
+            get-entry-extras
             get-memes
             get-categories
             get-photos
@@ -42,8 +44,17 @@
 ;; The target URL is percent-encoded: image URLs may contain "&", "="
 ;; or "+", which would otherwise break the query string or be decoded
 ;; as spaces by uri-decode.
+;; KYM still serves some image URLs over plain http (old YouTube
+;; thumbnails, for instance). The proxy only accepts https, so upgrade
+;; URLs on allowed hosts instead of rejecting them.
+(define (https-upgrade url)
+  (if (string-prefix? "http://" url)
+    (let ((secure (string-append "https://" (substring url 7))))
+      (if (proxyable? secure) secure url))
+    url))
+
 (define (proxy url)
-  (string-append "/proxy?url=" (uri-encode url)))
+  (string-append "/proxy?url=" (uri-encode (https-upgrade url))))
 
 (define (not-newline s)
   (not (equal? "\n" s)))
@@ -124,9 +135,9 @@
                    ((attr 'data-nsfw-src e) => decode-nsfw-src)
                    ((attr 'src e) => identity)
                    (else #f))))
-    (if (and url (string-prefix? "//" url))
-      (string-append "https:" url)
-      url)))
+    (cond ((not url) #f)
+          ((string-prefix? "//" url) (string-append "https:" url))
+          (else (https-upgrade url)))))
 
 ;; Privacy frontends for third-party media, configured through env vars
 ;; (e.g. RIMGO_URL=https://rimgo.example.org). Unset or empty means
@@ -262,7 +273,7 @@
 (define (embed-node? e)
   (and (pair? e)
        (symbol? (car e))
-       (or (memq (car e) '(lite-tiktok lite-youtube iframe))
+       (or (memq (car e) '(lite-tiktok lite-youtube iframe embed object))
            (and (eq? (car e) 'blockquote)
                 (or (has-class? "tiktok-embed" e)
                     (has-class? "twitter-tweet" e)
@@ -273,6 +284,11 @@
   (case (car e)
     ((lite-tiktok) (tiktok-embed (attr 'videoid e) e))
     ((lite-youtube) (youtube-embed (attr 'videoid e)))
+    ;; Legacy plugin content (mostly dead Flash players): never let the
+    ;; browser fetch it, just link to it.
+    ((embed object)
+     (let ((src (or (attr 'src e) (attr 'data e))))
+       (if src (external-link src "external media") '())))
     ((iframe)
      (let ((src (or (attr 'data-src e) (attr 'src e) "")))
        (cond ((youtube-id src) => youtube-embed)
@@ -379,6 +395,98 @@
             ((sxpath '((p 5) a @ href *text*)) node)))
         ((sxml-filter (lambda (n) (not (pred n)))) (cdar bodycopy))))))
 
+;; Element children of NODE, without its attribute list.
+(define (node-children node)
+  (if (and (pair? (cdr node)) (pair? (cadr node)) (eq? (caadr node) '@))
+    (cddr node)
+    (cdr node)))
+
+(define (by-id tag id d)
+  (let ((r ((sxpath `(// (,tag (@ id (equal? ,id))))) d)))
+    (if (null? r) #f (car r))))
+
+;; htmlprag leaves character references in attribute values undecoded,
+;; so titles taken from title=/alt=/data-title= would show "&#x27;".
+(define (decode-entities s)
+  (regexp-substitute/global
+    #f "&(#x[0-9a-fA-F]+|#[0-9]+|amp|quot|apos|lt|gt);" s
+    'pre
+    (lambda (m)
+      (let ((e (match:substring m 1)))
+        (cond ((string=? e "amp") "&")
+              ((string=? e "quot") "\"")
+              ((string=? e "apos") "'")
+              ((string=? e "lt") "<")
+              ((string=? e "gt") ">")
+              ((string-prefix? "#x" e)
+               (string (integer->char (string->number (substring e 2) 16))))
+              (else
+               (string (integer->char (string->number (substring e 1))))))))
+    'post))
+
+;; Thumbnail grid items: (href title image) for every link of class
+;; LINK-CLASS inside NODE that carries an image.
+(define (grid-items node link-class title-proc)
+  (filter (lambda (i) (and (car i) (caddr i)))
+          (map (lambda (a)
+                 (let ((img ((sxpath '(// img)) a)))
+                   (list (attr 'href a)
+                         (title-proc a)
+                         (and (pair? img)
+                              (or (attr 'data-src (car img))
+                                  (attr 'src (car img)))))))
+               (select 'a link-class node))))
+
+;; KYM's "View Gallery" button of a media section, if any. Sensitive
+;; galleries show only this button instead of thumbnails.
+(define (gallery-link section)
+  (let ((b (select-first 'a "button" section)))
+    (and b (attr 'href b))))
+
+;; Title of a thumbnail link: its image's title, else its alt text.
+(define (img-title a)
+  (let ((i ((sxpath '(// img)) a)))
+    (if (null? i) ""
+      (decode-entities (or (attr 'title (car i)) (attr 'alt (car i)) "")))))
+
+;; Heading of a section: (title total), e.g. ("Recent Images" "145 total")
+(define (section-heading h2)
+  (if (not h2)
+    (list "" "")
+    (list (string-join (string-tokenize
+                         (string-join (filter string? (node-children h2)) " "))
+                       " ")
+          (text-of ((sxpath '(small)) h2)))))
+
+;; Thumbnail strips shown after an entry's body, as an alist with
+;;   related  list of (title total items): related entries, sub-entries
+;;   videos   (title total items gallery) of the recent videos strip, or #f
+;;   photos   (title total items gallery) of the recent images strip, or #f
+;; where items are (href title image) and gallery is KYM's "View Gallery"
+;; link (the only content of galleries marked as sensitive), or #f.
+(define (get-entry-extras d)
+  (let ((videos (by-id 'section "videos" d))
+        (photos (by-id 'section "photos" d)))
+    `((related
+       . ,(map (lambda (block)
+                 (let ((h2 ((sxpath '(h2)) block)))
+                   (append (section-heading (if (null? h2) #f (car h2)))
+                           (list (grid-items block "photo" img-title)))))
+               (select 'div "related_memes" d)))
+      (videos
+       . ,(and videos
+               (let ((h2 ((sxpath '(h2)) videos)))
+                 (append (section-heading (if (null? h2) #f (car h2)))
+                         (list (grid-items videos "video"
+                                           (lambda (a) (text-of ((sxpath '(// strong)) a))))
+                               (gallery-link videos))))))
+      (photos
+       . ,(and photos
+               (let ((h2 ((sxpath '(h2)) photos)))
+                 (append (section-heading (if (null? h2) #f (car h2)))
+                         (list (grid-items photos "photo" img-title)
+                               (gallery-link photos)))))))))
+
 (define (get-memes d)
   (define pref '(html body main article html head article section))
   (define pref2 '(// (section (@ class (equal? "gallery")))
@@ -483,7 +591,7 @@
         (filter caddr
                 (map (lambda (a)
                        (list (or (attr 'href a) "")
-                             (or (attr 'data-title a) "")
+                             (decode-entities (or (attr 'data-title a) ""))
                              (gallery-image a)))
                      (select 'a "item" gallery)))
         '())

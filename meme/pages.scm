@@ -18,7 +18,7 @@
 
 (define-module (meme pages)
   #:use-module (meme templates)
-  #:use-module ((meme scraping) #:select (proxyable?))
+  #:use-module ((meme scraping) #:select (proxyable? https-upgrade))
   #:use-module (htmlprag)
   #:use-module (web response)
   #:use-module (web client)
@@ -225,7 +225,7 @@
                    ((string-prefix? "//" url) (string-append "https:" url))
                    ((string-prefix? "/" url)
                     (string-append "https://knowyourmeme.com" url))
-                   (else url))))
+                   (else (https-upgrade url)))))
           (else (loop (cdr pairs))))))
 
 ;; Fetch an image, following redirects internally as long as they stay
