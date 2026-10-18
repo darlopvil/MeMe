@@ -69,6 +69,14 @@
        (proxy-page (uri-query uri)))
       ((or (equal? path "/") (null? path-components))
        (home-page))
+      ;; Random entry / image / video: KYM answers with a redirect to a
+      ;; random page, which generic-page relays.
+      ((and (= (length path-components) 2)
+            (equal? (cadr path-components) "random")
+            (member (car path-components) '("memes" "photos" "videos")))
+       (cond ((equal? (car path-components) "memes") (meme-page uristring))
+             ((equal? (car path-components) "photos") (photo-page uristring))
+             (else (video-page uristring))))
       ((and
          (equal? (car path-components) "editorials")
          (or
@@ -156,12 +164,20 @@
               (pages? path-components "memes")
               (pages? path-components "children")
               (pages? path-components "submissions")
-              (pages? path-components "researching")
+              (pages? path-components "confirmed")
               (pages? path-components "newsworthy")
               (pages? path-components "popular")
               (pages? path-components "deadpool")
               (pages? path-components "all")))
        (memes-page uristring))
+      ;; News: listings share the editorial list layout, articles the
+      ;; editorial article layout.
+      ((and (equal? (car path-components) "news")
+            (or (= (length path-components) 1)
+                (pages? path-components "news")))
+       (editorials-page uristring))
+      ((equal? (car path-components) "news")
+       (article-page uristring))
       ;; Editorial articles: /editorials/<section>/<slug>. A bare
       ;; /editorials/<slug> is redirected there by KYM.
       ((equal? (car path-components) "editorials")
