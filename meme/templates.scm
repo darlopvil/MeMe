@@ -103,8 +103,11 @@
                  (li (a (@ (href "/editorials/guides")) "guides"))
                  (li (a (@ (href "/editorials/meme-insider")) "meme-insider"))
                  (li (a (@ (href "/editorials/insights")) "insights")))))
-              (li (@ (class "episodes"))
-                (a (@ (href "/episodes"))))))))
+              (li (@ (class "search"))
+                (form (@ (method "get") (action "/search"))
+                  (input (@ (type "search") (name "q")
+                            (placeholder "search")
+                            (aria-label "Search Know Your Meme")))))))))
 
 (define source-url
   (or (getenv "SOURCE_URL") "https://github.com/darlopvil/MeMe"))
@@ -118,6 +121,22 @@
 
 ;; Link to page N of the listing at PATH, which may already carry a
 ;; /page/M suffix and a query string (e.g. ?sort=views).
+;; Search paginates with a page= query parameter instead of /page/N.
+(define (search-page-link query n)
+  (let* ((params (filter (lambda (p)
+                           (not (or (string-null? p)
+                                    (string-prefix? "page=" p))))
+                         (string-split (if (string-prefix? "?" query)
+                                         (substring query 1)
+                                         query)
+                                       #\&)))
+         (params (if (= n 1)
+                   params
+                   (append params
+                           (list (string-append "page=" (number->string n)))))))
+    (string-append "/search"
+                   (if (null? params) "" (string-append "?" (string-join params "&"))))))
+
 (define (page-link path n)
   (let* ((q (string-index path #\?))
          (base (if q (substring path 0 q) path))
@@ -125,9 +144,11 @@
          (m (string-contains base "/page/"))
          (base (if m (substring base 0 m) base))
          (base (if (string-suffix? "/" base) (string-drop-right base 1) base)))
-    (string-append base
-                   (if (= n 1) "" (string-append "/page/" (number->string n)))
-                   query)))
+    (if (string=? base "/search")
+      (search-page-link query n)
+      (string-append base
+                     (if (= n 1) "" (string-append "/page/" (number->string n)))
+                     query))))
 
 ;; KYM galleries use infinite scroll and no longer ship a pager, but
 ;; they still serve /page/N server-side, so build prev/next links here.

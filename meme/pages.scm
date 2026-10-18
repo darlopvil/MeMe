@@ -37,6 +37,7 @@
             photos-page
             photo-page
             article-page
+            search-page
             proxy-page))
 
 (define (pages? components str)
@@ -201,6 +202,12 @@
 (define (photo-page path)
   (display "; \tHandler: photo-page")
   (generic-page photo-template path))
+
+;; Search results use the same gallery markup as image listings, for
+;; every context (entries, images, videos, news, editorials, users...).
+(define (search-page path)
+  (display "; \tHandler: search-page")
+  (generic-page photos-template path))
 
 (define (article-page path)
   (display "; \tHandler: article-page")

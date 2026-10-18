@@ -440,6 +440,20 @@ figure.embed-video iframe {
 	aspect-ratio: 16 / 9;
 }
 
+ul.navbar li.search form {
+	margin: 0;
+}
+
+ul.navbar li.search input {
+	background-color: transparent;
+	border: 1px solid #ff99c8;
+	border-radius: 4px;
+	color: #ffc8dd;
+	font-size: 1em;
+	padding: 0.2em 0.5em;
+	width: 10em;
+}
+
 a.external-media {
 	overflow-wrap: anywhere;
 }

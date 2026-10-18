@@ -156,6 +156,8 @@
        (article-page uristring))
       ((equal? (car path-components) "memes")
        (meme-page uristring))
+      ((equal? (car path-components) "search")
+       (search-page uristring))
       ((and (equal? (car path-components) "categories")
             (equal? (length path-components) 1))
        (categories-page uristring))

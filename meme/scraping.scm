@@ -408,10 +408,17 @@
 ;; data-nsfw-src when KYM serves a cover image instead.
 (define (gallery-image item)
   (let* ((box (or (select-first 'div "not-vertical-only" item) item))
-         (imgs ((sxpath '(// img)) box)))
-    (cond ((null? imgs) #f)
-          ((attr 'data-nsfw-src (car imgs)) => decode-nsfw-src)
-          (else (attr 'src (car imgs))))))
+         (imgs ((sxpath '(// img)) box))
+         (url (cond ((null? imgs) #f)
+                    ((attr 'data-nsfw-src (car imgs)) => decode-nsfw-src)
+                    (else (attr 'src (car imgs))))))
+    ;; Some search results carry only the NSFW cover in the masonry image;
+    ;; the original is then left in the vertical variant's srcset-disabled.
+    (if (and url (string-contains url "image-covers/nsfw"))
+      (let ((real (filter (lambda (u) (not (string-contains u "image-covers")))
+                          ((sxpath '(// img @ srcset-disabled *text*)) item))))
+        (if (null? real) url (car real)))
+      url)))
 
 ;; (heading tabs sorts items page total)
 ;;   heading  the <h1> node of the collection header, or #f
