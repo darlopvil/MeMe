@@ -470,12 +470,21 @@
                   `(div (@ (class "box video-page"))
                      ,(if entry `(p (a (@ (href ,(car entry))) ,(cadr entry))) '())
                      (h1 ,(assq-ref v 'title))
+                     ,(uploader-line body)
                      ,(or (assq-ref v 'player) '())
                      ,(if (null? nav) '()
                         `(p (@ (class "video-nav"))
                             ,(car nav)
                             ,@(apply append (map (lambda (n) (list " · " n)) (cdr nav))))))))
              ,footer))))
+
+;; "Uploaded by <user>" line for image and video pages, or nothing
+(define (uploader-line body)
+  (let ((u (get-uploader body)))
+    (if u
+      `(p (@ (class "uploader"))
+          "Uploaded by " (a (@ (href ,(kym->local (cdr u)))) ,(car u)))
+      '())))
 
 ;; " · " between the elements of LST
 (define (interleave lst)
@@ -539,6 +548,7 @@
                (div (@ (class "box photo-header"))
                  ,(car photo)
                  (p "Source: " ,(cadddr photo))
+                 ,(uploader-line body)
                  ,(list-ref photo 4)
                  ,(list-ref photo 5))
                (div (@ (class "box photo-body"))

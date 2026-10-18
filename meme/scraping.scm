@@ -39,6 +39,7 @@
             get-photos
             get-photo
             get-profile
+            get-uploader
             get-article
             get-pagination
             get-title))
@@ -738,6 +739,48 @@
                                   ((sxpath '(li a)) tabs)))
                      '())))))))
 
+
+;; Undo JSON string escapes: \" \\ \/ \n \t and \uXXXX.
+(define (json-unescape s)
+  (let loop ((cs (string->list s)) (acc '()))
+    (cond ((null? cs) (list->string (reverse acc)))
+          ((and (char=? (car cs) #\\) (pair? (cdr cs)))
+           (let ((c (cadr cs)))
+             (case c
+               ((#\n) (loop (cddr cs) (cons #\newline acc)))
+               ((#\t) (loop (cddr cs) (cons #\tab acc)))
+               ((#\u)
+                (let* ((hex (and (>= (length cs) 6)
+                                 (list->string (list-head (cddr cs) 4))))
+                       (n (and hex (string->number hex 16))))
+                  (if n
+                    (loop (list-tail cs 6) (cons (integer->char n) acc))
+                    (loop (cddr cs) (cons c acc)))))
+               (else (loop (cddr cs) (cons c acc))))))
+          (else (loop (cdr cs) (cons (car cs) acc))))))
+
+;; (name . url) of whoever added an image, video or entry, or #f. KYM
+;; renders the "Uploaded by" line with JavaScript, but every page carries
+;; the author in its schema.org metadata, which is steadier than markup.
+(define (get-uploader d)
+  (let loop ((scripts (filter (lambda (s)
+                                (equal? (attr 'type s) "application/ld+json"))
+                              ((sxpath '(// script)) d))))
+    (if (null? scripts)
+      #f
+      (let ((m (string-match
+                 (string-append "\"author\":\\{\"@type\":\"Person\","
+                                "\"name\":\"((\\\\.|[^\"\\\\])*)\","
+                                "\"url\":\"([^\"]*)\"")
+                 (text-of* (car scripts)))))
+        (if m
+          (cons (json-unescape (match:substring m 1))
+                (json-unescape (match:substring m 3)))
+          (loop (cdr scripts)))))))
+
+;; Raw text content of NODE (no whitespace squashing, unlike text-of).
+(define (text-of* node)
+  (apply string-append (filter string? ((sxpath '(// *text*)) node))))
 
 ;; Editorial article page:
 ;; (section title image authors published body tags)
