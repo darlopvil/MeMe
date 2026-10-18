@@ -288,7 +288,7 @@
 
 ;; Embeds. KYM ships TikToks as <lite-tiktok> / blockquote.tiktok-embed,
 ;; tweets as blockquote.twitter-tweet(-lazy), video tweets as
-;; blockquote.twitter-video, and YouTube as
+;; blockquote.twitter-video, Tumblr posts as div.tumblr-post, and YouTube as
 ;; <lite-youtube> or a YouTube <iframe>, all turned into players by its
 ;; JavaScript. Each one becomes an iframe to the configured frontend,
 ;; wrapped in a <figure> so get-meme's top-level filters (which drop bare
@@ -378,10 +378,39 @@
          (external-link (string-append "https://www.youtube.com/watch?v=" id)
                         "YouTube"))))
 
+;; Tumblr posts: div.tumblr-post, turned into an iframe by Tumblr's
+;; post.js. The blog and post id come from the link inside it
+;; (<blog>.tumblr.com/post/<id>/... or www.tumblr.com/<blog>/<id>).
+;; Priviblur serves a compact, script-free view at /<blog>/<id>/embed;
+;; theme=dark matches MeMe. Without Priviblur the div stays as it is, and
+;; its link is rewritten like any other.
+(define (tumblr-post-target node)
+  (let loop ((hrefs ((sxpath '(// a @ href *text*)) node)))
+    (if (null? hrefs)
+      #f
+      (let ((m (or (string-match
+                     "^https?://(www\\.)?([a-z0-9-]+)\\.tumblr\\.com/post/([0-9]+)"
+                     (car hrefs))
+                   (string-match
+                     "^https?://(www\\.)?tumblr\\.com/([a-z0-9-]+)/([0-9]+)"
+                     (car hrefs)))))
+        (if (and m (not (equal? (match:substring m 2) "www")))
+          (cons (match:substring m 2) (match:substring m 3))
+          (loop (cdr hrefs)))))))
+
+(define (tumblr-embed node)
+  (let ((target (tumblr-post-target node)))
+    (if (and priviblur-url target)
+      (embed-frame "tumblr"
+                   (string-append priviblur-url "/" (car target) "/" (cdr target)
+                                  "/embed?theme=dark"))
+      node)))
+
 (define (embed-node? e)
   (and (pair? e)
        (symbol? (car e))
        (or (memq (car e) '(lite-tiktok lite-youtube iframe embed object))
+           (and (eq? (car e) 'div) (has-class? "tumblr-post" e))
            (and (eq? (car e) 'blockquote)
                 (or (has-class? "tiktok-embed" e)
                     (has-class? "twitter-tweet" e)
@@ -404,6 +433,7 @@
              ((string-null? src) '())
              ((string-contains src "trends.google.") (trends-link src))
              (else (external-link src "external media")))))
+    ((div) (tumblr-embed e))
     (else
      (if (has-class? "tiktok-embed" e)
        (tiktok-embed (attr 'data-video-id e) e)

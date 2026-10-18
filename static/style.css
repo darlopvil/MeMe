@@ -434,6 +434,11 @@ figure.embed-tweet iframe {
 	height: 600px;
 }
 
+figure.embed-tumblr iframe {
+	width: 540px;
+	height: 640px;
+}
+
 figure.embed-video iframe {
 	width: 640px;
 	height: auto;
