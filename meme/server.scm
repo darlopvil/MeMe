@@ -127,9 +127,7 @@
     (catch #t (lambda () (close-port client)) (lambda _ #f))
     (log-text (get-output-string out))))
 
-(define* (run-threaded-server handler sock
-                              #:key (timeout 60) on-timeout (backlog 128))
-  (listen sock backlog)
+(define (accept-loop sock handler timeout on-timeout)
   (let loop ()
     (let ((client (car (accept sock))))
       (acquire-slot!)
@@ -140,3 +138,21 @@
             (lambda () (serve-client client handler timeout on-timeout))
             release-slot!))))
     (loop)))
+
+(define* (run-threaded-server handler sock
+                              #:key (timeout 60) on-timeout (backlog 128))
+  (listen sock backlog)
+  (call-with-new-thread
+    (lambda () (accept-loop sock handler timeout on-timeout)))
+  ;; Inside a container this process is PID 1, and the kernel drops any
+  ;; signal PID 1 has no handler for: without these, docker stop's SIGINT
+  ;; is ignored and the container is SIGKILLed after the grace period.
+  ;; Guile runs Scheme signal handlers on the thread that installed them,
+  ;; at a point where it can be interrupted, so the main thread just
+  ;; sleeps (interruptible) while another thread blocks in accept.
+  (for-each (lambda (sig)
+              (sigaction sig (lambda (_) (primitive-exit 0))))
+            (list SIGINT SIGTERM))
+  (let wait ()
+    (sleep 3600)
+    (wait)))
