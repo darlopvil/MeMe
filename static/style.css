@@ -440,6 +440,10 @@ figure.embed-video iframe {
 	aspect-ratio: 16 / 9;
 }
 
+a.external-media {
+	overflow-wrap: anywhere;
+}
+
 form > span > input[type="submit"][active="true"] {
 	font-weight: bold;
 	color: #ffc8dd;

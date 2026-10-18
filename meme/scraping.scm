@@ -239,6 +239,10 @@
      (let ((src (or (attr 'data-src e) (attr 'src e) "")))
        (cond ((youtube-id src) => youtube-embed)
              ((string-null? src) '())
+             ;; KYM's "Search Interest" widget: a Google Trends chart that
+             ;; shows nothing without JavaScript. get-meme already drops
+             ;; its heading, so drop the frame too.
+             ((string-contains src "trends.google.") '())
              (else (external-link src "external media")))))
     (else
      (if (has-class? "tiktok-embed" e)
