@@ -18,6 +18,7 @@
 
 (define-module (meme pages)
   #:use-module (meme templates)
+  #:use-module ((meme scraping) #:select (proxyable?))
   #:use-module (htmlprag)
   #:use-module (web response)
   #:use-module (web client)
@@ -79,14 +80,31 @@
   (build-response #:code 200
                   #:headers `((content-type . (text/html)))))
 
-(define (redirect response code)
-  (values (build-response #:code code
-                          #:headers `((location . ,(parse-header
-                                                     'location
-                                                     (uri-path
-                                                       (response-location
-                                                         response))))))
-          "Redirect"))
+;; Local equivalent (path + query) of a Location pointing at KYM, or #f
+;; when it points somewhere else. Relative locations are kept as is.
+(define (local-location uri)
+  (and (or (not (uri-host uri))
+           (member (uri-host uri) '("knowyourmeme.com"
+                                    "www.knowyourmeme.com"
+                                    "trending.knowyourmeme.com")))
+       (string-append (uri-path uri)
+                      (if (uri-query uri)
+                        (string-append "?" (uri-query uri))
+                        ""))))
+
+;; Relay an upstream redirect as a redirect within MeMe, keeping the
+;; query string (e.g. /photos/sort/views -> /photos?sort=views). A
+;; redirect off KYM is not followed blindly: the user gets a page
+;; explaining where it leads.
+(define (redirect response code path)
+  (let ((target (local-location (response-location response))))
+    (if target
+      (values (build-response
+                #:code code
+                #:headers `((location . ,(parse-header 'location target))))
+              "Redirect")
+      (error-page 502 "Know Your Meme redirected this page outside the site."
+                  path))))
 
 (define* (error-page code #:optional message path)
   (values (build-response
@@ -144,7 +162,7 @@
                         (error-page 502 "Know Your Meme sent an invalid redirect."
                                     path))
                        ((not (equal? (uri-path location) path))
-                        (redirect resp code))
+                        (redirect resp code path))
                        ;; Redirected to the same path: some listings live
                        ;; on the trending host. Try it once, never loop.
                        ((not retried?)
@@ -188,51 +206,65 @@
   (display "; \tHandler: article-page")
   (generic-page article-template path))
 
+;; Value of the url= parameter. Split on the first "=" only: the value
+;; itself may contain "=" (older links were not percent-encoded).
+(define (proxy-target query)
+  (let loop ((pairs (string-split (or query "") #\&)))
+    (cond ((null? pairs) #f)
+          ((string-prefix? "url=" (car pairs))
+           (let ((url (uri-decode (substring (car pairs) 4)
+                                  #:decode-plus-to-space? #f)))
+             (cond ((string-null? url) #f)
+                   ((string-prefix? "//" url) (string-append "https:" url))
+                   ((string-prefix? "/" url)
+                    (string-append "https://knowyourmeme.com" url))
+                   (else url))))
+          (else (loop (cdr pairs))))))
+
+;; Fetch an image, following redirects internally as long as they stay
+;; on allowed hosts. Relaying them to the browser would turn a CDN path
+;; into a local path that does not exist.
+(define* (proxy-fetch url #:optional (hops 0))
+  (receive (resp body) (fetch url)
+    (let ((code (response-code resp))
+          (location (response-location resp)))
+      (if (and (>= code 300) (<= code 399) location (< hops 3))
+        (let ((next (if (uri-host location)
+                      (uri->string location)
+                      (let ((base (string->uri url)))
+                        (string-append (symbol->string (uri-scheme base))
+                                       "://" (uri-host base)
+                                       (uri->string location))))))
+          (if (proxyable? next)
+            (proxy-fetch next (1+ hops))
+            (values resp body)))
+        (values resp body)))))
+
 (define (proxy-page query)
   (display "; \tHandler: proxy-page")
-  (let ((resp "")
-        (body "")
-        (url "")
-        (query (or query "")))
-    (map (lambda (p)
-           (if (equal? (car p) "url")
-             (set! url (uri-decode (cadr p)))))
-         (map (lambda (s)
-                (string-split s #\=))
-              (string-split query #\&)))
-    (if (or (string-prefix? "https://i.kym-cdn.com/" url)
-            (string-prefix? "https://i.ytimg.com/" url)
-            (string-prefix? "https://a.kym-cdn.com/" url)
-            (string-prefix? "https://knowyourmeme.com/" url))
-      (begin
-        (receive (_resp _body) (fetch url)
-                 (set! resp _resp)
-                 (set! body _body))
-        (display (string-append "; \tStatus: "
-                                (number->string (response-code resp))))
-        (newline)
-        (cond
-          ((equal? (response-code resp) 200)
-           (values (build-response
-                     #:code 200
-                     #:headers `((content-type .
-                                  ,(response-content-type resp))
-                                 (cache-control .
-                                  ,(parse-header 'cache-control
-                                                 "max-age=604800"))))
-                   body))
-          ((and (>= (response-code resp) 300) (<= (response-code resp) 399))
-           (values (build-response
-                     #:code (response-code resp)
-                     #:headers `((location . ,(parse-header
-                                                'location
-                                                (uri-path
-                                                  (response-location
-                                                    resp))))
-                                 (content-type .
-                                  ,(response-content-type resp))))
-          "Redirect"))
-          (else (error-page 404))))
-      (if (and (not (string-null? url)) (equal? (string-ref url 0) #\/))
-        (proxy-page (string-append "url=https://knowyourmeme.com" url))
-        (begin (newline) (error-page 400))))))
+  (let ((url (proxy-target query)))
+    (if (not (and url (proxyable? url)))
+      (begin (newline) (error-page 400))
+      (receive (resp body)
+          (catch #t
+            (lambda () (proxy-fetch url))
+            (lambda (key . args)
+              (pass-signals key args)
+              (log-error "Proxy upstream error" key args)
+              (values #f #f)))
+        (if (not resp)
+          (error-page 502)
+          (let ((code (response-code resp)))
+            (display (string-append "; \tStatus: " (number->string code)))
+            (newline)
+            (if (= code 200)
+              (values (build-response
+                        #:code 200
+                        #:headers `((content-type
+                                     . ,(or (response-content-type resp)
+                                            '(application/octet-stream)))
+                                    (cache-control
+                                     . ,(parse-header 'cache-control
+                                                      "max-age=604800"))))
+                      body)
+              (error-page (if (and (>= code 400) (<= code 499)) 404 502)))))))))

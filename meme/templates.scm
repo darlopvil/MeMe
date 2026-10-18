@@ -252,7 +252,7 @@
                               ,(caar l)
                               (p (a (@ (href ,(car (cadddr l)))) "Source"))
                               (a (@ (href ,(kym->local (caadr l))))
-                                (img (@ (src ,(caaddr l))
+                                (img (@ (src ,(proxy (caaddr l)))
                                         (loading "lazy"))))
                               ,(append '(span) (list-ref l 4))))
                          (car (last-pair meme))))

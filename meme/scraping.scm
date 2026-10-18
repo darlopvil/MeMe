@@ -20,12 +20,14 @@
   #:use-module (gcrypt base64)
   #:use-module (rnrs bytevectors)
   #:use-module (ice-9 regex)
+  #:use-module (web uri)
   #:use-module ((sxml xpath)
                 #:renamer (lambda (p)
                             (if (eq? 'filter p)
                               'sxml-filter
                               p)))
   #:export (proxy
+            proxyable?
             get-editorials
             get-meme
             get-memes
@@ -36,8 +38,11 @@
             get-pagination
             get-title))
 
+;; The target URL is percent-encoded: image URLs may contain "&", "="
+;; or "+", which would otherwise break the query string or be decoded
+;; as spaces by uri-decode.
 (define (proxy url)
-  (string-append "/proxy?url=" url))
+  (string-append "/proxy?url=" (uri-encode url)))
 
 (define (not-newline s)
   (not (equal? "\n" s)))
@@ -101,7 +106,7 @@
           (list-set! ret i (modify-list e pred proc))))))
   ret)
 
-;; Hosts the image proxy accepts (keep in sync with proxy-page).
+;; Hosts the image proxy accepts. proxy-page uses this same list.
 (define proxyable-prefixes
   '("https://i.kym-cdn.com/" "https://a.kym-cdn.com/"
     "https://i.ytimg.com/" "https://knowyourmeme.com/"))

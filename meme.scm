@@ -85,6 +85,17 @@
            (pages? path-components "meme-insider")
            (pages? path-components "insights")))
        (editorials-page uristring))
+      ;; .../photos/sort/<order>: KYM's own menus link here and answer
+      ;; with a redirect to .../photos?sort=<order>, which generic-page
+      ;; relays with the query intact.
+      ((and (>= (length path-components) 3)
+            (equal? (list-ref path-components
+                              (- (length path-components) 3))
+                    "photos")
+            (equal? (list-ref path-components
+                              (- (length path-components) 2))
+                    "sort"))
+       (photos-page uristring))
       ((or
          (equal? (car (last-pair path-components)) "photos")
          (and (or
