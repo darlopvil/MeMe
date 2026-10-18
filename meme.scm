@@ -20,6 +20,7 @@
 
 (define-module (meme)
   #:use-module (meme pages)
+  #:use-module (meme server)
   #:use-module (web server)
   #:use-module (web uri)
   #:use-module (web request)
@@ -164,33 +165,17 @@
       (else (newline) (error-page 501)))))
 
 
-;; this is taken from web/server.scm because it isn't exported
-(define call-with-sigint
-  (if (not (provided? 'posix))
-    (lambda (thunk handler-thunk) (thunk))
-    (lambda (thunk handler-thunk)
-      (let ((handler #f))
-        (catch 'interrupt
-          (lambda ()
-            (dynamic-wind
-              (lambda ()
-                (set! handler
-                  (sigaction SIGINT (lambda (sig) (throw 'interrupt)))))
-              thunk
-              (lambda ()
-                (if handler
-                  ;; restore Scheme handler, SIG_IGN or SIG_DFL.
-                  (sigaction SIGINT (car handler) (cdr handler))
-                  ;; restore original C handler.
-                  (sigaction SIGINT #f)))))
-          (lambda (k . _) (handler-thunk)))))))
-
+;; Requests are served concurrently by (meme server), one thread per
+;; connection. A request still running after 60 seconds (usually KYM not
+;; answering) gets a 504 page. SIGINT terminates the process right away.
 (let ((port (if (getenv "PORT")
               (string->number (getenv "PORT"))
               8003))
       (sock (socket PF_INET SOCK_STREAM 0)))
   (setsockopt sock SOL_SOCKET SO_REUSEPORT 1)
   (bind sock AF_INET INADDR_ANY port)
-  (fcntl sock F_SETFL (logior O_NONBLOCK
-                              (fcntl sock F_GETFL)))
-  (run-server handler 'http `(#:socket ,sock)))
+  (run-threaded-server
+    handler sock
+    #:timeout 60
+    #:on-timeout (lambda ()
+                   (error-page 504 "Know Your Meme took too long to answer."))))
