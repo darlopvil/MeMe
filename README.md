@@ -48,6 +48,12 @@ When running under a service manager (e.g. systemd), set the stop signal to `SIG
 |--------------|-------------------------------------|-------------|
 | `PORT`       | `8003`                              | Port to listen on. |
 | `SOURCE_URL` | `https://github.com/darlopvil/MeMe` | Link shown as "Source Code" in the footer. If you run a modified version, the AGPL requires pointing it to your modified source. |
+| `RIMGO_URL`     | unset | [rimgo](https://codeberg.org/rimgo/rimgo) instance used to display Imgur images. |
+| `PROXITOK_URL`  | unset | [ProxiTok](https://github.com/pablouser1/ProxiTok) instance used to embed TikTok videos. |
+| `NITTER_URL`    | unset | [Nitter](https://github.com/zedeus/nitter) instance used to embed tweets. |
+| `INVIDIOUS_URL` | unset | [Invidious](https://github.com/iv-org/invidious) instance used to embed YouTube videos. |
+
+When one of the frontend variables is unset, that kind of embed is shown as a plain link to the original site instead, so the browser never loads anything from Imgur, TikTok, Twitter/X or YouTube on its own. Embedded frontends must allow being framed (no `X-Frame-Options` or restrictive `frame-ancestors` on their embed routes).
 
 ## Contributing
 

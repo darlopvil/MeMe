@@ -414,6 +414,32 @@ form > span > input[type="submit"] {
 	font-size: 1em;
 }
 
+figure.embed {
+	margin: 1em auto;
+	text-align: center;
+}
+
+figure.embed iframe {
+	border: none;
+	max-width: 100%;
+}
+
+figure.embed-tiktok iframe {
+	width: 325px;
+	height: 745px;
+}
+
+figure.embed-tweet iframe {
+	width: 550px;
+	height: 600px;
+}
+
+figure.embed-video iframe {
+	width: 640px;
+	height: auto;
+	aspect-ratio: 16 / 9;
+}
+
 form > span > input[type="submit"][active="true"] {
 	font-weight: bold;
 	color: #ffc8dd;

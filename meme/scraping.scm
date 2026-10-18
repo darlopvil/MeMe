@@ -19,6 +19,7 @@
 (define-module (meme scraping)
   #:use-module (gcrypt base64)
   #:use-module (rnrs bytevectors)
+  #:use-module (ice-9 regex)
   #:use-module ((sxml xpath)
                 #:renamer (lambda (p)
                             (if (eq? 'filter p)
@@ -121,22 +122,126 @@
       (string-append "https:" url)
       url)))
 
-;; Images on proxyable hosts go through /proxy. Anything else (imgur,
-;; embedded Scratch projects, ...) becomes a plain link instead of a
-;; broken image, so the browser never contacts third parties on its own.
+;; Privacy frontends for third-party media, configured through env vars
+;; (e.g. RIMGO_URL=https://rimgo.example.org). Unset or empty means
+;; "not available": that media type falls back to a plain link.
+(define (frontend-url var)
+  (let ((v (getenv var)))
+    (and v (not (string-null? v))
+         (if (string-suffix? "/" v) (string-drop-right v 1) v))))
+
+(define rimgo-url     (frontend-url "RIMGO_URL"))
+(define proxitok-url  (frontend-url "PROXITOK_URL"))
+(define nitter-url    (frontend-url "NITTER_URL"))
+(define invidious-url (frontend-url "INVIDIOUS_URL"))
+
+(define (external-link url label)
+  `(a (@ (href ,url) (class "external-media"))
+      ,(string-append "[" label ": " url "]")))
+
+;; i.imgur.com/<id>.<ext> -> <rimgo>/<id>.<ext>, or #f
+(define (imgur->rimgo url)
+  (let ((m (string-match "^https?://i\\.imgur\\.com(/[^?#]+)" url)))
+    (and m rimgo-url (string-append rimgo-url (match:substring m 1)))))
+
+;; Images on proxyable hosts go through /proxy, imgur images through
+;; rimgo when configured. Anything else (embedded Scratch projects, ...)
+;; becomes a plain link instead of a broken image, so the browser never
+;; contacts third parties on its own.
 (define (img-replace nodeset)
   (modify-list
     nodeset (node-typeof? 'img)
     (lambda (e)
-      (let ((url (img-source e)))
+      (let ((url (img-source e))
+            (alt (or (attr 'alt e) "")))
         (cond ((not url) '())
               ((proxyable? url)
-               `(img (@ (src ,(proxy url))
-                        (alt ,(or (attr 'alt e) ""))
-                        (loading "lazy"))))
-              (else
-               `(a (@ (href ,url) (class "external-media"))
-                   ,(string-append "[external media: " url "]"))))))))
+               `(img (@ (src ,(proxy url)) (alt ,alt) (loading "lazy"))))
+              ((imgur->rimgo url)
+               => (lambda (src)
+                    `(img (@ (src ,src) (alt ,alt) (loading "lazy")))))
+              (else (external-link url "external media")))))))
+
+;; Embeds. KYM ships TikToks as <lite-tiktok> / blockquote.tiktok-embed,
+;; tweets as blockquote.twitter-tweet(-lazy) and YouTube as
+;; <lite-youtube> or a YouTube <iframe>, all turned into players by its
+;; JavaScript. Each one becomes an iframe to the configured frontend,
+;; wrapped in a <figure> so get-meme's top-level filters (which drop bare
+;; iframes and paragraph-less divs) leave it alone.
+(define (embed-frame kind src)
+  `(figure (@ (class ,(string-append "embed embed-" kind)))
+     (iframe (@ (src ,src)
+                (loading "lazy")
+                (frameborder "0")
+                (allowfullscreen "allowfullscreen")))))
+
+(define (tiktok-embed id node)
+  (cond ((not id) '())
+        (proxitok-url
+         (embed-frame "tiktok" (string-append proxitok-url "/embed/v2/" id)))
+        (else
+         (let ((cite ((sxpath '(// @ cite *text*)) node)))
+           (external-link (if (null? cite)
+                            (string-append "https://www.tiktok.com/embed/v2/" id)
+                            (car cite))
+                          "TikTok")))))
+
+(define (tweet-status-id node)
+  (let loop ((hrefs ((sxpath '(// a @ href *text*)) node)))
+    (cond ((null? hrefs) #f)
+          ((string-match "/status/([0-9]+)" (car hrefs))
+           => (lambda (m) (match:substring m 1)))
+          (else (loop (cdr hrefs))))))
+
+(define (tweet-embed node)
+  (let ((id (tweet-status-id node)))
+    (cond ((not id) node)
+          (nitter-url
+           (embed-frame "tweet"
+                        (string-append nitter-url "/i/status/" id "/embed")))
+          (else
+           (external-link (string-append "https://twitter.com/i/status/" id)
+                          "tweet")))))
+
+(define (youtube-id url)
+  (let ((m (string-match "youtube(-nocookie)?\\.com/embed/([A-Za-z0-9_-]+)"
+                         url)))
+    (and m (match:substring m 2))))
+
+(define (youtube-embed id)
+  (cond ((not id) '())
+        (invidious-url
+         (embed-frame "video" (string-append invidious-url "/embed/" id)))
+        (else
+         (external-link (string-append "https://www.youtube.com/watch?v=" id)
+                        "YouTube"))))
+
+(define (embed-node? e)
+  (and (pair? e)
+       (symbol? (car e))
+       (or (memq (car e) '(lite-tiktok lite-youtube iframe))
+           (and (eq? (car e) 'blockquote)
+                (or (has-class? "tiktok-embed" e)
+                    (has-class? "twitter-tweet" e)
+                    (has-class? "twitter-tweet-lazy" e))))
+       #t))
+
+(define (embed-node->html e)
+  (case (car e)
+    ((lite-tiktok) (tiktok-embed (attr 'videoid e) e))
+    ((lite-youtube) (youtube-embed (attr 'videoid e)))
+    ((iframe)
+     (let ((src (or (attr 'data-src e) (attr 'src e) "")))
+       (cond ((youtube-id src) => youtube-embed)
+             ((string-null? src) '())
+             (else (external-link src "external media")))))
+    (else
+     (if (has-class? "tiktok-embed" e)
+       (tiktok-embed (attr 'data-video-id e) e)
+       (tweet-embed e)))))
+
+(define (embed-replace nodeset)
+  (modify-list nodeset embed-node? embed-node->html))
 
 (define (script-kill nodeset)
   (modify-list
@@ -149,7 +254,7 @@
     (lambda _ '())))
 
 (define (clean-bodycopy bodycopy)
-  (style-kill (script-kill (img-replace bodycopy))))
+  (style-kill (script-kill (img-replace (embed-replace bodycopy)))))
 
 (define (get-meme d)
   (define pref
