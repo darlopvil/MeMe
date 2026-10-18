@@ -1,4 +1,5 @@
 ;; Copyright (C) 2024-2025 Skylar Astaroth <cobra@vern.cc>
+;; Copyright (C) 2026 darlopvil
 ;;
 ;; This file is part of MeMe
 ;;
@@ -39,14 +40,52 @@
 (define (not-newline s)
   (not (equal? "\n" s)))
 
+;; Class-based selection helpers. KYM's markup shifts often, so these
+;; match on element type plus one class token instead of on absolute
+;; positional paths, which break as soon as a wrapper div is added.
+(define (attr name node)
+  (let ((v ((sxpath `(@ ,name *text*)) node)))
+    (if (null? v) #f (car v))))
+
+(define (has-class? class node)
+  (let ((c (attr 'class node)))
+    (and c (member class (string-tokenize c)) #t)))
+
+(define (select tag class node)
+  (filter (lambda (n) (has-class? class n))
+          ((sxpath `(// ,tag)) node)))
+
+(define (select-first tag class node)
+  (let ((r (select tag class node)))
+    (if (null? r) #f (car r))))
+
+(define (text-of nodes)
+  (string-join
+    (string-tokenize
+      (string-join (append-map* (lambda (n) ((sxpath '(// *text*)) n))
+                                nodes)
+                   " "))
+    " "))
+
+(define (append-map* proc lst)
+  (apply append (map proc lst)))
+
+(define (decode-nsfw-src s)
+  (utf8->string
+    (base64-decode (string-delete char-set:whitespace s)
+                   base64-alphabet #f #f)))
+
+;; (href title image summary) for each article in the list sections
 (define (get-editorials d)
-  (define pref
-    '(html main article article div (div 1) div div section ol li a))
-  (map list
-       ((sxpath (append pref '(@   href      *text*))) d)
-       (filter not-newline ((sxpath (append pref '(div h3 *text*))) d))
-       ((sxpath (append pref '(div img @ src *text*))) d)
-       (filter not-newline ((sxpath (append pref '(div p  *text*))) d))))
+  (map (lambda (a)
+         (let ((img ((sxpath '(// img)) a)))
+           (list (or (attr 'href a) "")
+                 (text-of ((sxpath '(// h3)) a))
+                 (if (null? img) "" (or (attr 'src (car img)) ""))
+                 (text-of ((sxpath '(// p)) a)))))
+       (append-map* (lambda (li) ((sxpath '(a)) li))
+                    (append-map* (lambda (s) (select 'li "item" s))
+                                 (select 'section "latest" d)))))
 
 
 (define (modify-list nodeset pred proc)
@@ -225,17 +264,51 @@
     ((sxpath '(html body div div div header hgroup h1)) d)
     (list (cdr out1))))
 
+;; Image of a gallery item: the masonry thumbnail, decoded from
+;; data-nsfw-src when KYM serves a cover image instead.
+(define (gallery-image item)
+  (let* ((box (or (select-first 'div "not-vertical-only" item) item))
+         (imgs ((sxpath '(// img)) box)))
+    (cond ((null? imgs) #f)
+          ((attr 'data-nsfw-src (car imgs)) => decode-nsfw-src)
+          (else (attr 'src (car imgs))))))
+
+;; (heading tabs sorts items page total)
+;;   heading  the <h1> node of the collection header, or #f
+;;   tabs     view forms (All / Trending / Templates)
+;;   sorts    sort forms (Newest / Oldest / ...), desktop variant only:
+;;            the mobile variant is a <select> that needs JavaScript
+;;   items    list of (href title image)
+;;   page     current page number as reported by KYM
+;;   total    total number of results, or #f if not shown
 (define (get-photos d)
-  (define pref '(html main article html head article section))
-  (list
-    ((sxpath (append pref '((div 1) h1 span *text*))) d)
-    (car ((sxpath (append pref '((div 2) (div 1) (div 1) div))) d))
-    (let ((form ((sxpath (append pref '((div 2) (div 2) div (div 2)))) d)))
-      (if (equal? form '()) '() (car form)))
-    (map cons
-         ((sxpath (append pref '((div 3) div section div a @ href *text*))) d)
-         ((sxpath (append pref '((div 3) div section div a div (div 1) (div 2)
-                                 img @ src *text*))) d))))
+  (let* ((header (select-first 'div "collection-header" d))
+         (h1 (if header ((sxpath '(h1)) header) '()))
+         (bars (select-first 'div "bars" d))
+         (tab-box (and bars (select-first 'div "scaleless" bars)))
+         (sort-box (and bars (select-first 'div "desktop-only" bars)))
+         (gallery (select-first 'section "gallery" d))
+         (total-span (and header
+                          (select-first 'span "pretty_total_results" header)))
+         (total-digits (and total-span
+                            (string-filter char-set:digit
+                                           (text-of (list total-span))))))
+    (list
+      (if (null? h1) #f (car h1))
+      (if tab-box ((sxpath '(form)) tab-box) '())
+      (if sort-box ((sxpath '(form)) sort-box) '())
+      (if gallery
+        (filter caddr
+                (map (lambda (a)
+                       (list (or (attr 'href a) "")
+                             (or (attr 'data-title a) "")
+                             (gallery-image a)))
+                     (select 'a "item" gallery)))
+        '())
+      (or (and gallery (attr 'data-page gallery)
+               (string->number (attr 'data-page gallery)))
+          1)
+      (and total-digits (string->number total-digits)))))
 
 (define (get-photo d)
   (define pref  '(// (* (@ id (equal? "photo_wrapper"))) div a))

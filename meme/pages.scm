@@ -104,7 +104,8 @@
                  (values good-response
                          (string-replace-substring
                            (string-replace-substring
-                             (shtml->html (procedure doc))
+                             (shtml->html (parameterize ((current-path path))
+                                            (procedure doc)))
                              "https://knowyourmeme.com:443" "")
                            "https://knowyourmeme.com" ""))))
               ((and (>= (response-code resp) 300) (<= (response-code resp) 399))

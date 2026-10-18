@@ -19,7 +19,8 @@
 (define-module (meme templates)
   #:use-module (meme scraping)
   #:use-module (ice-9 string-fun)
-  #:export (error-template
+  #:export (current-path
+            error-template
             eof-template
             home-template
             editorials-template
@@ -28,6 +29,10 @@
             categories-template
             photos-template
             photo-template))
+
+;; Path (with query string) of the request being rendered; set by
+;; generic-page so templates can build links back to the same listing.
+(define current-path (make-parameter "/"))
 
 (define (kym->local url)
   (cond ((string-prefix? "https://knowyourmeme.com" url)
@@ -109,6 +114,42 @@
        (p (a (@ (href ,source-url)) "Source Code")
           " · Fork of "
           (a (@ (href "https://codeberg.org/cobra/MeMe")) "cobra/MeMe")))))
+
+;; Link to page N of the listing at PATH, which may already carry a
+;; /page/M suffix and a query string (e.g. ?sort=views).
+(define (page-link path n)
+  (let* ((q (string-index path #\?))
+         (base (if q (substring path 0 q) path))
+         (query (if q (substring path q) ""))
+         (m (string-contains base "/page/"))
+         (base (if m (substring base 0 m) base))
+         (base (if (string-suffix? "/" base) (string-drop-right base 1) base)))
+    (string-append base
+                   (if (= n 1) "" (string-append "/page/" (number->string n)))
+                   query)))
+
+;; KYM galleries use infinite scroll and no longer ship a pager, but
+;; they still serve /page/N server-side, so build prev/next links here.
+(define (gallery-pager page count total)
+  (let ((prev? (> page 1))
+        (next? (and (> count 0)
+                    (if total (< (* page count) total) #t))))
+    (if (or prev? next?)
+      `(div (@ (class "wide-pagination"))
+         (div (@ (class "pagination box"))
+           (ul (@ (class "pager"))
+             (li ,(if prev?
+                    `(a (@ (class "page-button")
+                           (href ,(page-link (current-path) (- page 1))))
+                        (i (@ (class "fa fa-chevron-left"))))
+                    '()))
+             (li ,(number->string page))
+             (li ,(if next?
+                    `(a (@ (class "page-button")
+                           (href ,(page-link (current-path) (+ page 1))))
+                        (i (@ (class "fa fa-chevron-right"))))
+                    '())))))
+      '())))
 
 (define (pagination-template pagination)
   (if (not (equal? pagination '()))
@@ -267,28 +308,35 @@
              ,footer))))
 
 (define (photos-template body)
-  (let ((photos (get-photos body)))
+  (let* ((photos (get-photos body))
+         (title (list-ref photos 0))
+         (tabs  (list-ref photos 1))
+         (sorts (list-ref photos 2))
+         (items (list-ref photos 3))
+         (page  (list-ref photos 4))
+         (total (list-ref photos 5)))
     `(html ,(html-head body)
            (body
              ,heading
              (div (@ (class "box photos"))
-               (h1 ,(car photos))
-               ,(cadr photos)
-               (br)
-               ,(if (equal? '() (caddr photos))
+               ,(or title '(h1 "Images"))
+               ,(if (null? tabs)
                   '()
-                  `(div (@ (style "display: inline-flex;"))
-                     ,(cddr (caddr photos)))))
-             (div (@ (class "box photos-gallery"))
-               ,(map (lambda (p)
-                       `(a (@ (href ,(car p)))
-                          (img (@ (src ,(proxy (cdr p)))
-                                  (loading "lazy")))))
-                     (cadddr photos)))
-             ,(if (not (equal? (get-pagination body) '()))
-                `(div (@ (class "wide-pagination"))
-                   ,(pagination-template (get-pagination body)))
-                '())
+                  `(div (@ (style "display: inline-flex;")) ,@tabs))
+               ,(if (null? sorts)
+                  '()
+                  `(div (b "Sorted by: ")
+                        (div (@ (style "display: inline-flex;")) ,@sorts))))
+             ,(if (null? items)
+                `(div (@ (class "box photos")) (p "No images found."))
+                `(div (@ (class "box photos-gallery"))
+                   ,(map (lambda (i)
+                           `(a (@ (href ,(car i)) (title ,(cadr i)))
+                              (img (@ (src ,(proxy (caddr i)))
+                                      (alt ,(cadr i))
+                                      (loading "lazy")))))
+                         items)))
+             ,(gallery-pager page (length items) total)
              ,footer))))
 
 (define (photo-template body)

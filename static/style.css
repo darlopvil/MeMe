@@ -414,6 +414,11 @@ form > span > input[type="submit"] {
 	font-size: 1em;
 }
 
+form > span > input[type="submit"][active="true"] {
+	font-weight: bold;
+	color: #ffc8dd;
+}
+
 form > span > input[type="submit"]:hover {
 	text-decoration: underline;
 }
