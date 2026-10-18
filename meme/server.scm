@@ -115,15 +115,13 @@
               (if result
                 (write-reply client request (car result) (cadr result))
                 (begin
-                  (display "; \tTimed out" out)
-                  (newline out)
+                  (display " timeout status=504" out)
                   (call-with-values on-timeout
                     (lambda (response body)
                       (write-reply client request response body)))))))))
       (lambda (key . args)
         ;; Usually the client went away mid-response (broken pipe).
-        (display (format #f "; \tConnection error: ~a" key) out)
-        (newline out)))
+        (display (format #f " connection-error=~a" key) out)))
     (catch #t (lambda () (close-port client)) (lambda _ #f))
     (log-text (get-output-string out))))
 

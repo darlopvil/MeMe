@@ -817,8 +817,16 @@
       (list (cadr ((sxpath '(// (* (@ class (equal? "pager"))) li)) d))))
     '()))
 
+;; Page title without KYM's " | Know Your Meme" suffix. The title text
+;; may be split in several nodes and wrapped in newlines, and some pages
+;; (user profiles) have no trailing newline, so never drop a fixed count.
 (define (get-title d)
   (if (string? d) d
-    (string-drop-right
-      (car (filter not-newline ((sxpath '(html head title *text*)) d)))
-      18)))
+    (let ((t (string-trim-both
+               (apply string-append
+                      (filter string?
+                              ((sxpath '(html head title *text*)) d)))))
+          (suffix " | Know Your Meme"))
+      (if (string-suffix? suffix t)
+        (string-drop-right t (string-length suffix))
+        t))))

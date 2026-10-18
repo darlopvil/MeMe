@@ -35,8 +35,7 @@
     (lambda () (dispatch request request-body))
     (lambda (key . args)
       (pass-signals key args)
-      (display (format #f "; \tHandler error: ~a ~s" key args))
-      (newline)
+      (display (format #f " handler-error=~a ~s" key args))
       (error-page 500 "Something went wrong while handling this request."))))
 
 (define (dispatch request request-body)
@@ -46,19 +45,19 @@
          (uristring (uri->string uri)))
 
     (display (string-append
-               (strftime "%c" (localtime (current-time)))
-               ": " (uri->string uri)))
+               (strftime "%F %T" (localtime (current-time)))
+               " " (uri->string uri)))
     (if (and (not (equal? path-components '()))
              (equal? (car path-components) "sensitive"))
       (set! path-components (cdr path-components)))
     (cond
       ((equal? path "/style.css")
-       (display ";\tHandler: internal") (newline)
+       (display " handler=internal status=200")
        (values `((content-type . (text/css)))
                (call-with-input-file "static/style.css"
                                      get-string-all)))
       ((equal? path "/favicon.png")
-       (display ";\tHandler: internal") (newline)
+       (display " handler=internal status=200")
        (values `((content-type . (image/png))
                  (cache-control .
                                 ,(parse-header 'cache-control
@@ -199,7 +198,7 @@
       ((or (equal? (car path-components) "categories")
            (equal? (car path-components) "types"))
        (memes-page uristring))
-      (else (newline) (error-page 501)))))
+      (else (display " status=501") (error-page 501)))))
 
 
 ;; Requests are served concurrently by (meme server), one thread per

@@ -245,6 +245,38 @@
                 " / " (a (@ (href "/memes/navy-seal-copypasta")) "MeMe")))
            ,footer)))
 
+;; KYM double-escapes some markup in editorial summaries, so once parsed
+;; they read "a <i>Hamilton</i> fandom" literally. Turn the harmless
+;; inline tags (i, em, b, strong) back into elements; anything else stays
+;; plain text, which shtml->html escapes.
+(define (inline-markup s)
+  (define (add frame x) (cons (car frame) (cons x (cdr frame))))
+  (define (close frame) (cons (car frame) (reverse (cdr frame))))
+  (let loop ((s s) (stack (list (list 'top))))
+    (let* ((m (string-match "<(/?)(i|em|b|strong)>" s))
+           (pre (if m (match:prefix m) s))
+           (stack (if (string-null? pre)
+                    stack
+                    (cons (add (car stack) pre) (cdr stack)))))
+      (cond
+        ((not m)
+         (let unwind ((stack stack))
+           (if (null? (cdr stack))
+             (cdr (close (car stack)))
+             (unwind (cons (add (cadr stack) (close (car stack)))
+                           (cddr stack))))))
+        ((string-null? (match:substring m 1))
+         (loop (match:suffix m)
+               (cons (list (string->symbol (match:substring m 2))) stack)))
+        ((and (pair? (cdr stack))
+              (eq? (caar stack) (string->symbol (match:substring m 2))))
+         (loop (match:suffix m)
+               (cons (add (cadr stack) (close (car stack))) (cddr stack))))
+        (else
+         (loop (match:suffix m)
+               (cons (add (car stack) (match:substring m 0))
+                     (cdr stack))))))))
+
 (define (editorials-template body)
   `(html ,(html-head body)
          (body
@@ -255,8 +287,8 @@
                         (img (@ (src ,(proxy (caddr l)))
                                 (alt ,(cadr l))
                                 (loading "lazy")))
-                        (h3 ,(cadr l))
-                        (p ,(cadddr l)))))
+                        (h3 ,@(inline-markup (cadr l)))
+                        (p ,@(inline-markup (cadddr l))))))
                  (get-editorials body))
            (div (@ (class "wide-pagination"))
              ,(pagination-template (get-pagination body)))
@@ -356,10 +388,11 @@
                               (p (@ (class "tooltip box"))
                                 ,(caddr l)))))
                        (car (cddddr memes)))))
-             ,(if (not (equal? (get-pagination body) ""))
-                `(div (@ (class "wide-pagination"))
-                   ,(pagination-template (get-pagination body)))
-                '())
+             ,(let ((pagination (get-pagination body)))
+                (if (null? pagination)
+                  '()
+                  `(div (@ (class "wide-pagination"))
+                     ,(pagination-template pagination))))
              ,footer))))
 
 (define (categories-template body)

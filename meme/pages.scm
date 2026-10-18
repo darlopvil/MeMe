@@ -60,8 +60,7 @@
     (apply throw key args)))
 
 (define (log-error what key args)
-  (display (format #f "; \t~a: ~a ~s" what key args))
-  (newline))
+  (display (format #f " ~a=~a ~s" what key args)))
 
 (define user-agent-header
   `((user-agent . ,(parse-header 'user-agent "Mozilla/5.0"))))
@@ -132,7 +131,7 @@
                   "https://knowyourmeme.com" ""))))
     (lambda (key . args)
       (pass-signals key args)
-      (log-error "Render error" key args)
+      (log-error "render-error" key args)
       (error-page 500
                   (string-append "Know Your Meme changed the layout of "
                                  "this page and MeMe could not read it.")
@@ -149,15 +148,16 @@
           (fetch (string-append base-url path) #:headers user-agent-header))
         (lambda (key . args)
           (pass-signals key args)
-          (log-error "Upstream error" key args)
+          (log-error "upstream-error" key args)
           (values #f key)))
     (if (not resp)
-      (values (build-response #:code 502
-                              #:headers `((content-type . (text/html))))
-              (shtml->html (eof-template path body)))
+      (begin
+        (display " status=502")
+        (values (build-response #:code 502
+                                #:headers `((content-type . (text/html))))
+                (shtml->html (eof-template path body))))
       (let ((code (response-code resp)))
-        (display (string-append "; \tStatus: " (number->string code)))
-        (newline)
+        (display (string-append " status=" (number->string code)))
         (cond ((= code 200)
                (render-page procedure path body))
               ((and (>= code 300) (<= code 399))
@@ -178,58 +178,57 @@
               (else (error-page code)))))))
 
 (define (home-page)
-  (display "; \tHandler: home-page; \tStatus: 200")
-  (newline)
+  (display " handler=home-page status=200")
   (values good-response (shtml->html home-template)))
 
 (define (editorials-page path)
-  (display "; \tHandler: editorials-page")
+  (display " handler=editorials-page")
   (generic-page editorials-template path))
 
 (define (meme-page path)
-  (display "; \tHandler: meme-page")
+  (display " handler=meme-page")
   (generic-page meme-template path))
 
 (define (memes-page path)
-  (display "; \tHandler: memes-page")
+  (display " handler=memes-page")
   (generic-page memes-template path))
 
 (define (categories-page path)
-  (display "; \tHandler: categories-page")
+  (display " handler=categories-page")
   (generic-page categories-template path))
 
 (define (photos-page path)
-  (display "; \tHandler: photos-page")
+  (display " handler=photos-page")
   (generic-page photos-template path))
 
 (define (photo-page path)
-  (display "; \tHandler: photo-page")
+  (display " handler=photo-page")
   (generic-page photo-template path))
 
 ;; Search results use the same gallery markup as image listings, for
 ;; every context (entries, images, videos, news, editorials, users...).
 (define (search-page path)
-  (display "; \tHandler: search-page")
+  (display " handler=search-page")
   (generic-page photos-template path))
 
 ;; Video listings (/videos, /videos/trending, /memes/<slug>/videos) use
 ;; the same gallery markup as image listings.
 (define (videos-page path)
-  (display "; \tHandler: videos-page")
+  (display " handler=videos-page")
   (generic-page photos-template path))
 
 (define (video-page path)
-  (display "; \tHandler: video-page")
+  (display " handler=video-page")
   (generic-page video-template path))
 
 ;; User profiles: /users/<name> and its /wall tab. The Images and Videos
 ;; tabs are ordinary galleries (photos-page, videos-page).
 (define (profile-page path)
-  (display "; \tHandler: profile-page")
+  (display " handler=profile-page")
   (generic-page profile-template path))
 
 (define (article-page path)
-  (display "; \tHandler: article-page")
+  (display " handler=article-page")
   (generic-page article-template path))
 
 ;; Value of the url= parameter. Split on the first "=" only: the value
@@ -267,22 +266,21 @@
         (values resp body)))))
 
 (define (proxy-page query)
-  (display "; \tHandler: proxy-page")
+  (display " handler=proxy-page")
   (let ((url (proxy-target query)))
     (if (not (and url (proxyable? url)))
-      (begin (newline) (error-page 400))
+      (begin (display " status=400") (error-page 400))
       (receive (resp body)
           (catch #t
             (lambda () (proxy-fetch url))
             (lambda (key . args)
               (pass-signals key args)
-              (log-error "Proxy upstream error" key args)
+              (log-error "upstream-error" key args)
               (values #f #f)))
         (if (not resp)
-          (error-page 502)
+          (begin (display " status=502") (error-page 502))
           (let ((code (response-code resp)))
-            (display (string-append "; \tStatus: " (number->string code)))
-            (newline)
+            (display (string-append " status=" (number->string code)))
             (if (= code 200)
               (values (build-response
                         #:code 200
