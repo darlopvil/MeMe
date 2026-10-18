@@ -182,7 +182,8 @@
               (else (external-link url "external media")))))))
 
 ;; Embeds. KYM ships TikToks as <lite-tiktok> / blockquote.tiktok-embed,
-;; tweets as blockquote.twitter-tweet(-lazy) and YouTube as
+;; tweets as blockquote.twitter-tweet(-lazy), video tweets as
+;; blockquote.twitter-video, and YouTube as
 ;; <lite-youtube> or a YouTube <iframe>, all turned into players by its
 ;; JavaScript. Each one becomes an iframe to the configured frontend,
 ;; wrapped in a <figure> so get-meme's top-level filters (which drop bare
@@ -279,7 +280,8 @@
            (and (eq? (car e) 'blockquote)
                 (or (has-class? "tiktok-embed" e)
                     (has-class? "twitter-tweet" e)
-                    (has-class? "twitter-tweet-lazy" e))))
+                    (has-class? "twitter-tweet-lazy" e)
+                    (has-class? "twitter-video" e))))
        #t))
 
 (define (embed-node->html e)
