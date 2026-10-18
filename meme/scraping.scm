@@ -21,6 +21,7 @@
   #:use-module (rnrs bytevectors)
   #:use-module (ice-9 regex)
   #:use-module (web uri)
+  #:use-module (ice-9 string-fun)
   #:use-module ((sxml xpath)
                 #:renamer (lambda (p)
                             (if (eq? 'filter p)
@@ -208,6 +209,43 @@
            (external-link (string-append "https://twitter.com/i/status/" id)
                           "tweet")))))
 
+;; "a=1&b=2" -> (("a" . "1") ("b" . "2")), values left encoded
+(define (query-params str)
+  (map (lambda (kv)
+         (let ((i (string-index kv #\=)))
+           (if i
+             (cons (substring kv 0 i) (substring kv (1+ i)))
+             (cons kv ""))))
+       (filter (lambda (s) (not (string-null? s)))
+               (string-split str #\&))))
+
+;; KYM's "Search Interest" widget is a Google Trends iframe, which shows
+;; nothing without JavaScript. Turn it into a link to the same query on
+;; Google Trends itself. The search terms live in q= and the date range
+;; inside the url-encoded eq= parameter; KYM double-escapes the
+;; separators, so "&amp;" is normalised first. The paragraph keeps the
+;; section's id so the table of contents link still lands on it.
+(define (trends-link src)
+  (let* ((s (string-replace-substring src "&amp;" "&"))
+         (q (string-index s #\?))
+         (params (if q (query-params (substring s (1+ q))) '()))
+         (eq (assoc-ref params "eq"))
+         (inner (if eq
+                  (query-params (uri-decode eq #:decode-plus-to-space? #f))
+                  '()))
+         (terms (or (assoc-ref params "q") (assoc-ref inner "q")))
+         (date (or (assoc-ref inner "date") (assoc-ref params "date") "all")))
+    (if (or (not terms) (string-null? terms))
+      '()
+      `(p (@ (id "search-interest") (class "trends-link"))
+          (a (@ (href ,(string-append
+                         "https://trends.google.com/trends/explore?date="
+                         (uri-encode (uri-decode date)) "&q=" terms))
+                (target "_blank")
+                (rel "noopener noreferrer"))
+             "See how interest in this meme evolved on Google Trends")
+          " (opens Google Trends)"))))
+
 (define (youtube-id url)
   (let ((m (string-match "youtube(-nocookie)?\\.com/embed/([A-Za-z0-9_-]+)"
                          url)))
@@ -239,10 +277,7 @@
      (let ((src (or (attr 'data-src e) (attr 'src e) "")))
        (cond ((youtube-id src) => youtube-embed)
              ((string-null? src) '())
-             ;; KYM's "Search Interest" widget: a Google Trends chart that
-             ;; shows nothing without JavaScript. get-meme already drops
-             ;; its heading, so drop the frame too.
-             ((string-contains src "trends.google.") '())
+             ((string-contains src "trends.google.") (trends-link src))
              (else (external-link src "external media")))))
     (else
      (if (has-class? "tiktok-embed" e)
