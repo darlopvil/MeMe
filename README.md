@@ -52,8 +52,10 @@ When running under a service manager (e.g. systemd), set the stop signal to `SIG
 | `PROXITOK_URL`  | unset | [ProxiTok](https://github.com/pablouser1/ProxiTok) instance used to embed TikTok videos. |
 | `NITTER_URL`    | unset | [Nitter](https://github.com/zedeus/nitter) instance used to embed tweets. |
 | `INVIDIOUS_URL` | unset | [Invidious](https://github.com/iv-org/invidious) instance used to embed YouTube videos. |
+| `EDDRIT_URL`    | unset | [eddrit](https://github.com/corenting/eddrit) instance that Reddit links point to. |
+| `SOPRANO_URL`   | unset | [Soprano](https://codeberg.org/cobra/Soprano) instance that Tenor links point to. |
 
-When one of the frontend variables is unset, that kind of embed is shown as a plain link to the original site instead, so the browser never loads anything from Imgur, TikTok, Twitter/X or YouTube on its own. Embedded frontends must allow being framed (no `X-Frame-Options` or restrictive `frame-ancestors` on their embed routes).
+Links to those sites inside entries, articles, profiles and comments are also rewritten to point at the configured frontend. When one of the frontend variables is unset, that kind of embed is shown as a plain link to the original site instead, so the browser never loads anything from Imgur, TikTok, Twitter/X or YouTube on its own. Embedded frontends must allow being framed (no `X-Frame-Options` or restrictive `frame-ancestors` on their embed routes).
 
 ## Contributing
 

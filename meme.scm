@@ -64,6 +64,11 @@
                                                "max-age=604800")))
                (call-with-input-file "static/logo.png"
                                      get-bytevector-all)))
+      ;; Private instance: ask crawlers not to index anything.
+      ((equal? path "/robots.txt")
+       (display " handler=internal status=200")
+       (values '((content-type . (text/plain)))
+               "User-agent: *\nDisallow: /\n"))
       ((equal? path "/proxy")
        (proxy-page (uri-query uri)))
       ((or (equal? path "/") (null? path-components))

@@ -31,6 +31,7 @@
   #:export (proxy
             proxyable?
             https-upgrade
+            frontend-href
             get-editorials
             get-meme
             get-entry-extras
@@ -127,7 +128,9 @@
 ;; Hosts the image proxy accepts. proxy-page uses this same list.
 (define proxyable-prefixes
   '("https://i.kym-cdn.com/" "https://a.kym-cdn.com/"
-    "https://i.ytimg.com/" "https://knowyourmeme.com/"))
+    "https://i.ytimg.com/" "https://knowyourmeme.com/"
+    ;; GIFs posted in comments and entries
+    "https://media.tenor.com/" "https://c.tenor.com/"))
 
 (define (proxyable? url)
   (not (null? (filter (lambda (p) (string-prefix? p url))
@@ -157,6 +160,76 @@
 (define proxitok-url  (frontend-url "PROXITOK_URL"))
 (define nitter-url    (frontend-url "NITTER_URL"))
 (define invidious-url (frontend-url "INVIDIOUS_URL"))
+(define eddrit-url    (frontend-url "EDDRIT_URL"))
+(define soprano-url   (frontend-url "SOPRANO_URL"))
+
+;; Where a link to a third-party site should point: the matching privacy
+;; frontend when one is configured, otherwise the original URL. Only the
+;; host changes; frontends mirror the original paths.
+(define (frontend-href url)
+  (let ((m (string-match "^https?://([^/?#]+)(.*)$" url)))
+    (if (not m)
+      url
+      (let* ((host (string-downcase (match:substring m 1)))
+             (host (if (string-prefix? "www." host) (substring host 4) host))
+             (rest (match:substring m 2))
+             (rest (if (string-null? rest) "/" rest)))
+        (cond
+          ((and nitter-url
+                (member host '("twitter.com" "x.com" "mobile.twitter.com"
+                               "mobile.x.com")))
+           (string-append nitter-url rest))
+          ((and invidious-url
+                (member host '("youtube.com" "m.youtube.com"
+                               "music.youtube.com")))
+           (string-append invidious-url rest))
+          ((and invidious-url (equal? host "youtu.be"))
+           ;; youtu.be/<id>?t=1 -> /watch?v=<id>&t=1
+           (let ((v (string-match "^/([A-Za-z0-9_-]+)[?]?(.*)$" rest)))
+             (if v
+               (string-append invidious-url "/watch?v=" (match:substring v 1)
+                              (if (string-null? (match:substring v 2))
+                                ""
+                                (string-append "&" (match:substring v 2))))
+               url)))
+          ((and eddrit-url
+                (member host '("reddit.com" "old.reddit.com" "new.reddit.com"
+                               "np.reddit.com")))
+           ;; eddrit serves users under /user/, not /u/
+           (string-append eddrit-url
+                          (if (string-prefix? "/u/" rest)
+                            (string-append "/user/" (substring rest 3))
+                            rest)))
+          ((and proxitok-url (member host '("tiktok.com" "m.tiktok.com")))
+           (string-append proxitok-url rest))
+          ((and rimgo-url (member host '("imgur.com" "i.imgur.com" "m.imgur.com")))
+           (string-append rimgo-url rest))
+          ((and soprano-url (equal? host "tenor.com")
+                (string-prefix? "/view/" rest))
+           (string-append soprano-url rest))
+          (else url))))))
+
+;; Point links in page content at the configured frontends, and drop
+;; KYM's JavaScript-only controls ("click to expand" and the like).
+(define (link-replace nodeset)
+  (modify-list
+    nodeset (node-typeof? 'a)
+    (lambda (e)
+      (let* ((href (attr 'href e))
+             (new (and href (frontend-href href))))
+        (cond
+          ((and href (string-prefix? "javascript:" (string-trim href))) '())
+          ((or (not href) (equal? new href)) e)
+          (else
+           (let ((attrs (if (and (pair? (cdr e)) (pair? (cadr e))
+                                 (eq? (caadr e) '@))
+                          (cdadr e)
+                          '())))
+             `(a (@ (href ,new)
+                    ,@(filter (lambda (a)
+                                (not (and (pair? a) (eq? (car a) 'href))))
+                              attrs))
+                 ,@(node-children e)))))))))
 
 (define (external-link url label)
   `(a (@ (href ,url) (class "external-media"))
@@ -322,7 +395,8 @@
     (lambda _ '())))
 
 (define (clean-bodycopy bodycopy)
-  (style-kill (script-kill (img-replace (embed-replace bodycopy)))))
+  (link-replace
+    (style-kill (script-kill (img-replace (embed-replace bodycopy))))))
 
 (define (get-meme d)
   (define pref
@@ -643,18 +717,39 @@
           1)
       (and total-digits (string->number total-digits)))))
 
+;; (title alt src tags views date notes)
+;;   tags   list of tag links (may be empty)
+;;   views  "N views" paragraph, or '()
+;;   date   upload date <abbr>, or '()
+;;   notes  cleaned "Notes" nodes (often the source link), or #f
+;; Only the image itself is required; images without tags, notes or an
+;; alt text are common.
 (define (get-photo d)
   (define pref  '(// (* (@ id (equal? "photo_wrapper"))) div a))
   (define pref2 '(// (* (@ id (equal? "content"))) (div 2) (div 2)))
-  ;; (title alt src source views date)
+  (define (first-or l default) (if (null? l) default (car l)))
   (list
-    (car ((sxpath '(// (* (@ id (equal? "media-title"))))) d))
-    (car ((sxpath (append pref '(// img @ alt *text*))) d))
+    (first-or ((sxpath '(// (* (@ id (equal? "media-title"))))) d) '(h1 "Image"))
+    (first-or ((sxpath (append pref '(// img @ alt *text*))) d) "")
     (car ((sxpath (append pref '(@ href *text*))) d))
-    (car ((sxpath (append pref2 '((div (@ class (equal? "row")) 4) p a))) d))
-    (car ((sxpath (append pref2 '((div (@ class (equal? "row")) 1) p))) d))
-    (car ((sxpath (append pref2 '((div (@ class (equal? "row")) 2) p abbr)))
-          d))))
+    ((sxpath (append pref2 '((div (@ class (equal? "row")) 4) p a))) d)
+    (first-or ((sxpath (append pref2 '((div (@ class (equal? "row")) 1) p))) d)
+              '())
+    (first-or ((sxpath (append pref2 '((div (@ class (equal? "row")) 2) p abbr)))
+               d)
+              '())
+    (let ((notes (select-first 'div "media-notes" d)))
+      (and notes
+           (let ((body (clean-bodycopy
+                         ;; minus KYM's own "Notes" headings
+                         (filter (lambda (n)
+                                   (not (and (pair? n)
+                                             (or (eq? (car n) 'h6)
+                                                 (and (eq? (car n) 'p)
+                                                      (equal? (text-of (list n))
+                                                              "Notes:"))))))
+                                 (node-children notes)))))
+             (and (not (string-null? (text-of body))) body))))))
 
 ;; User profile (the "wall" page), as an alist:
 ;;   name           display name

@@ -11,5 +11,7 @@ services:
       # - PROXITOK_URL=https://proxitok.example.org
       # - NITTER_URL=https://nitter.example.org
       # - INVIDIOUS_URL=https://invidious.example.org
+      # - EDDRIT_URL=https://eddrit.example.org
+      # - SOPRANO_URL=https://soprano.example.org
     ports:
       - "8003:8003"
