@@ -38,6 +38,7 @@
             get-categories
             get-photos
             get-photo
+            get-profile
             get-article
             get-pagination
             get-title))
@@ -648,6 +649,92 @@
     (car ((sxpath (append pref2 '((div (@ class (equal? "row")) 1) p))) d))
     (car ((sxpath (append pref2 '((div (@ class (equal? "row")) 2) p abbr)))
           d))))
+
+;; User profile (the "wall" page), as an alist:
+;;   name           display name
+;;   role           e.g. "Sleuth", or #f
+;;   avatar         avatar image URL, or #f
+;;   location       "Location: ..." text, or #f
+;;   joined         "Joined <date>" text, or #f
+;;   contributions  "13 images, 1 video, ..." text, or #f
+;;   links          ((label . href) ...): social media profiles, websites
+;;   about          cleaned nodes of the user's "About" text, or #f
+;;   tabs           ((label . href) ...): the Images and Videos tabs
+;; The rest of the page (wall comments, karma, rankings, followers) is
+;; loaded by JavaScript or not worth showing. Returns #f when the page
+;; does not look like a profile.
+(define (get-profile d)
+  (let ((bio (by-id 'div "profile_bio" d)))
+    (and bio
+      (let* ((photo (by-id 'div "profile_photo" d))
+             (avatar (and photo
+                          (let ((i ((sxpath '(// img)) photo)))
+                            (and (pair? i) (img-source (car i))))))
+             (role (select-first 'h5 "role" bio))
+             (location (filter (lambda (p)
+                                 (string-prefix? "Location:"
+                                                 (text-of (list p))))
+                               ((sxpath '(p)) bio)))
+             (joined (select-first 'p "joined" bio))
+             (contribs (filter (lambda (s) (not (string-null? s)))
+                               (map (lambda (p) (text-of (list p)))
+                                    (append
+                                      (select 'p "contribs_comments" bio)
+                                      (select 'p "contribs_edits" bio)))))
+             ;; <dl><dt>Website</dt><dd>...</dd><dt>About</dt>... directly
+             ;; under the bio (the karma <dl>s live inside a table).
+             (fields (append-map*
+                       (lambda (dl)
+                         (let loop ((dts ((sxpath '(dt)) dl))
+                                    (dds ((sxpath '(dd)) dl))
+                                    (acc '()))
+                           (if (or (null? dts) (null? dds))
+                             (reverse acc)
+                             (loop (cdr dts) (cdr dds)
+                                   (cons (cons (text-of (list (car dts)))
+                                               (car dds))
+                                         acc)))))
+                       ((sxpath '(dl)) bio)))
+             (social (by-id 'div "profile-social-media-profiles" d))
+             (social-links
+               (if social
+                 (map (lambda (a)
+                        (cons (or (attr 'alt (car ((sxpath '(img)) a)))
+                                  (attr 'href a))
+                              (attr 'href a)))
+                      (filter (lambda (a)
+                                (and (attr 'href a)
+                                     (pair? ((sxpath '(img)) a))))
+                              ((sxpath '(// a)) social)))
+                 '()))
+             (website-links
+               (let ((dd (assoc-ref fields "Website")))
+                 (if dd
+                   (filter cdr
+                           (map (lambda (a)
+                                  (cons (text-of (list a)) (attr 'href a)))
+                                ((sxpath '(// a)) dd)))
+                   '())))
+             (about (assoc-ref fields "About"))
+             (tabs (by-id 'ul "profile-tabs" d)))
+        `((name . ,(text-of ((sxpath '(h1)) bio)))
+          (role . ,(and role (text-of (list role))))
+          (avatar . ,avatar)
+          (location . ,(and (pair? location) (text-of location)))
+          (joined . ,(and joined (text-of (list joined))))
+          (contributions . ,(and (pair? contribs)
+                                 (string-join contribs ", ")))
+          (links . ,(append social-links website-links))
+          (about . ,(and about (clean-bodycopy (node-children about))))
+          (tabs . ,(if tabs
+                     (filter (lambda (t)
+                               (or (string-suffix? "/photos" (cdr t))
+                                   (string-suffix? "/videos" (cdr t))))
+                             (map (lambda (a)
+                                    (cons (text-of (list a))
+                                          (or (attr 'href a) "")))
+                                  ((sxpath '(li a)) tabs)))
+                     '())))))))
 
 
 ;; Editorial article page:

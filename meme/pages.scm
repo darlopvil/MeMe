@@ -40,6 +40,7 @@
             search-page
             videos-page
             video-page
+            profile-page
             proxy-page))
 
 (define (pages? components str)
@@ -220,6 +221,12 @@
 (define (video-page path)
   (display "; \tHandler: video-page")
   (generic-page video-template path))
+
+;; User profiles: /users/<name> and its /wall tab. The Images and Videos
+;; tabs are ordinary galleries (photos-page, videos-page).
+(define (profile-page path)
+  (display "; \tHandler: profile-page")
+  (generic-page profile-template path))
 
 (define (article-page path)
   (display "; \tHandler: article-page")

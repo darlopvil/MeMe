@@ -19,6 +19,7 @@
 (define-module (meme templates)
   #:use-module (meme scraping)
   #:use-module (ice-9 string-fun)
+  #:use-module (ice-9 regex)
   #:export (current-path
             error-template
             eof-template
@@ -30,7 +31,8 @@
             photos-template
             photo-template
             article-template
-            video-template))
+            video-template
+            profile-template))
 
 ;; Path (with query string) of the request being rendered; set by
 ;; generic-page so templates can build links back to the same listing.
@@ -384,6 +386,11 @@
                        (cadr categories))))
              ,footer))))
 
+;; "/users/<name>" when rendering one of a user's galleries, else #f
+(define (profile-path)
+  (let ((m (string-match "^/users/[^/]+" (current-base-path))))
+    (and m (match:substring m 0))))
+
 (define (photos-template body)
   (let* ((photos (get-photos body))
          (title (list-ref photos 0))
@@ -397,6 +404,9 @@
              ,heading
              (div (@ (class "box photos"))
                ,(or title '(h1 "Images"))
+               ,(if (profile-path)
+                  `(p (a (@ (href ,(profile-path))) "‹ Back to profile"))
+                  '())
                ,(if (null? tabs)
                   '()
                   `(div (@ (style "display: inline-flex;")) ,@tabs))
@@ -466,6 +476,59 @@
                             ,(car nav)
                             ,@(apply append (map (lambda (n) (list " · " n)) (cdr nav))))))))
              ,footer))))
+
+;; " · " between the elements of LST
+(define (interleave lst)
+  (if (null? lst) '()
+    (cons (car lst)
+          (apply append (map (lambda (x) (list " · " x)) (cdr lst))))))
+
+(define (profile-template body)
+  (let ((p (get-profile body)))
+    (if (not p)
+      `(html ,(html-head body)
+             (body ,heading
+                   (div (@ (class "box meme"))
+                     (p "Could not read this profile."))
+                   ,footer))
+      (let ((field (lambda (k) (assq-ref p k)))
+            (since (filter identity (list (assq-ref p 'location)
+                                          (assq-ref p 'joined)))))
+        `(html ,(html-head (string-append (field 'name) "'s profile"))
+               (body
+                 ,heading
+                 (div (@ (class "box profile"))
+                   ,(if (field 'avatar)
+                      `(img (@ (class "avatar") (src ,(proxy (field 'avatar)))
+                               (alt "") (loading "lazy")))
+                      '())
+                   (h1 ,(field 'name))
+                   ,(if (field 'role) `(p (@ (class "role")) ,(field 'role)) '())
+                   ,(if (null? since) '() `(p ,@(interleave since)))
+                   ,(if (field 'contributions)
+                      `(p (b "Contributions: ") ,(field 'contributions))
+                      '())
+                   ,(if (null? (field 'links))
+                      '()
+                      `(p (b "Links: ")
+                          ,@(interleave
+                              (map (lambda (l)
+                                     `(a (@ (href ,(cdr l))
+                                            (rel "nofollow noopener noreferrer"))
+                                         ,(car l)))
+                                   (field 'links)))))
+                   ,(if (null? (field 'tabs))
+                      '()
+                      `(p (@ (class "profile-tabs"))
+                          ,@(interleave
+                              (map (lambda (t) `(a (@ (href ,(cdr t))) ,(car t)))
+                                   (field 'tabs))))))
+                 ,(if (field 'about)
+                    `(div (@ (class "box meme-body profile-about"))
+                       (h2 "About")
+                       ,@(field 'about))
+                    '())
+                 ,footer))))))
 
 (define (photo-template body)
   (let ((photo (get-photo body)))

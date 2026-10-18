@@ -503,3 +503,36 @@ form > span > input[type="submit"][active="true"] {
 form > span > input[type="submit"]:hover {
 	text-decoration: underline;
 }
+
+.profile.box {
+	padding: 0.5em 2% 1em 2%;
+	width: calc(94% - 10px);
+	overflow: hidden;
+}
+
+.profile.box img.avatar {
+	float: left;
+	width: 8em;
+	height: 8em;
+	object-fit: cover;
+	margin: 1em 1.5em 0.5em 0;
+}
+
+.profile.box h1 {
+	margin: 0.4em 0 0 0;
+}
+
+.profile.box p {
+	margin: 0.4em 0;
+	overflow-wrap: anywhere;
+}
+
+.profile.box p.role {
+	font-style: italic;
+}
+
+.profile.box p.profile-tabs {
+	clear: both;
+	padding-top: 0.5em;
+	font-weight: bold;
+}
