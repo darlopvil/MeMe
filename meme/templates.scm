@@ -161,29 +161,36 @@
 
 
 
-(define (error-template code)
+;; MESSAGE explains what went wrong; PATH, when given, adds a link to
+;; the same page on KYM (clearly marked as leaving MeMe).
+(define* (error-template code #:optional message path)
   `(html ,(html-head (number->string code))
          (body
            ,heading
            (center
-             (h1 (@ (class "error")) ,(number->string code)))
+             (h1 (@ (class "error")) ,(number->string code))
+             ,(if message `(p ,message) '())
+             ,(if path
+                `(p (a (@ (href ,(string-append "https://knowyourmeme.com"
+                                                path)))
+                       "Open this page on Know Your Meme")
+                    " (leaves MeMe)")
+                '()))
            ,footer)))
 
-(define (eof-template)
-  `(html (head (title "bad-response | MeMe")
-               (meta (@ (http-equiv "refresh")
-                        (content "1")))
-               (meta (@ (charset "UTF-8")))
-               (meta (@ (name "viewport") (content "width=device-width")))
-               (link (@ (rel "stylesheet") (href "/style.css")))
-               (link (@ (rel "icon") (type "image/png") (href "/favicon.png"))))
+;; KYM could not be reached or answered garbage. No automatic refresh:
+;; an upstream outage must not turn every open tab into a request loop.
+(define* (eof-template #:optional path reason)
+  `(html ,(html-head "Upstream error")
          (body
            ,heading
            (br)
            (center
-             (p ,(string-append "Key \"bad-response\" thrown while reading "
-                                "from knowyourmeme.com. This usually goes "
-                                "away after a few refreshes.")))
+             (h1 (@ (class "error")) "502")
+             (p "MeMe could not get a valid response from Know Your Meme"
+                ,(if reason (format #f " (~a)" reason) "")
+                ". This is usually temporary.")
+             ,(if path `(p (a (@ (href ,path)) "Try again")) '()))
            (br)
            ,footer)))
 

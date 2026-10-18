@@ -26,6 +26,7 @@
   #:use-module (ice-9 receive)
   #:use-module (ice-9 string-fun)
   #:export (pages?
+            pass-signals
             error-page
             home-page
             editorials-page
@@ -38,9 +39,24 @@
             proxy-page))
 
 (define (pages? components str)
-  (or (equal? (car (last-pair components)) str)
-      (and (equal? (list-ref components (- (length components) 2)) "page")
-           (equal? (list-ref components (- (length components) 3)) str))))
+  (let ((n (length components)))
+    (and (> n 0)
+         (or (equal? (list-ref components (- n 1)) str)
+             (and (>= n 3)
+                  (equal? (list-ref components (- n 2)) "page")
+                  (equal? (list-ref components (- n 3)) str))))))
+
+;; Our catch-all handlers must let these through, exactly like Guile's
+;; own server does: 'interrupt is how SIGINT (docker stop) ends
+;; run-server, and swallowing it would leave the container hanging until
+;; it gets SIGKILLed.
+(define (pass-signals key args)
+  (when (memq key '(quit interrupt))
+    (apply throw key args)))
+
+(define (log-error what key args)
+  (display (format #f "; \t~a: ~a ~s" what key args))
+  (newline))
 
 (define user-agent-header
   `((user-agent . ,(parse-header 'user-agent "Mozilla/5.0"))))
@@ -72,49 +88,72 @@
                                                          response))))))
           "Redirect"))
 
-(define (error-page code)
+(define* (error-page code #:optional message path)
   (values (build-response
             #:code code
             #:headers `((content-type . (text/html))))
-          (shtml->html (error-template code))))
+          (shtml->html (error-template code message path))))
+
+;; Parse and render an upstream page. Scrapers rely on KYM's markup, so a
+;; layout change makes them throw: turn that into a readable error page
+;; and a single log line instead of a bare 500 with a backtrace.
+(define (render-page procedure path body)
+  (catch #t
+    (lambda ()
+      (let ((doc (html->sxml-0nf body #:strict? #t)))
+        (values good-response
+                (string-replace-substring
+                  (string-replace-substring
+                    (shtml->html (parameterize ((current-path path))
+                                   (procedure doc)))
+                    "https://knowyourmeme.com:443" "")
+                  "https://knowyourmeme.com" ""))))
+    (lambda (key . args)
+      (pass-signals key args)
+      (log-error "Render error" key args)
+      (error-page 500
+                  (string-append "Know Your Meme changed the layout of "
+                                 "this page and MeMe could not read it.")
+                  path))))
 
 (define* (generic-page procedure path
-                       #:optional (base-url "https://knowyourmeme.com"))
-  (let ((resp "")
-        (body ""))
-    (receive (_resp _body)
-             (catch 'bad-response
-                    (lambda _ (fetch (string-append base-url path)
-                                     #:headers user-agent-header))
-                    (lambda _ (values #f #f)))
-             (set! resp _resp)
-             (set! body _body))
-    (if (and (eq? resp #f) (eq? body #f))
-      (begin
-        (display ";\tbad-response thrown") (newline)
-        (values
-          (build-response #:code 500
-                          #:headers `((content-type . (text/html))))
-          (shtml->html (eof-template))))
-      (begin
-        (display (string-append "; \tStatus: "
-                                (number->string (response-code resp))))
+                       #:optional (base-url "https://knowyourmeme.com")
+                                  (retried? #f))
+  (receive (resp body)
+      ;; Any failure talking to KYM (DNS, TLS, refused connection, a
+      ;; malformed response...) ends up here, not just bad-response.
+      (catch #t
+        (lambda ()
+          (fetch (string-append base-url path) #:headers user-agent-header))
+        (lambda (key . args)
+          (pass-signals key args)
+          (log-error "Upstream error" key args)
+          (values #f key)))
+    (if (not resp)
+      (values (build-response #:code 502
+                              #:headers `((content-type . (text/html))))
+              (shtml->html (eof-template path body)))
+      (let ((code (response-code resp)))
+        (display (string-append "; \tStatus: " (number->string code)))
         (newline)
-        (cond ((equal? (response-code resp) 200)
-               (let ((doc (html->sxml-0nf body #:strict? #t)))
-                 (values good-response
-                         (string-replace-substring
-                           (string-replace-substring
-                             (shtml->html (parameterize ((current-path path))
-                                            (procedure doc)))
-                             "https://knowyourmeme.com:443" "")
-                           "https://knowyourmeme.com" ""))))
-              ((and (>= (response-code resp) 300) (<= (response-code resp) 399))
-               (if (equal? (uri-path (response-location resp)) path)
-                 (generic-page procedure path
-                               "https://trending.knowyourmeme.com")
-                 (redirect resp (response-code resp))))
-              (else (error-page (response-code resp))))))))
+        (cond ((= code 200)
+               (render-page procedure path body))
+              ((and (>= code 300) (<= code 399))
+               (let ((location (response-location resp)))
+                 (cond ((not location)
+                        (error-page 502 "Know Your Meme sent an invalid redirect."
+                                    path))
+                       ((not (equal? (uri-path location) path))
+                        (redirect resp code))
+                       ;; Redirected to the same path: some listings live
+                       ;; on the trending host. Try it once, never loop.
+                       ((not retried?)
+                        (generic-page procedure path
+                                      "https://trending.knowyourmeme.com" #t))
+                       (else
+                        (error-page 502 "Know Your Meme keeps redirecting this page to itself."
+                                    path)))))
+              (else (error-page code)))))))
 
 (define (home-page)
   (display "; \tHandler: home-page; \tStatus: 200")
@@ -153,7 +192,8 @@
   (display "; \tHandler: proxy-page")
   (let ((resp "")
         (body "")
-        (url ""))
+        (url "")
+        (query (or query "")))
     (map (lambda (p)
            (if (equal? (car p) "url")
              (set! url (uri-decode (cadr p)))))
@@ -193,6 +233,6 @@
                                   ,(response-content-type resp))))
           "Redirect"))
           (else (error-page 404))))
-      (if (equal? (string-ref url 0) #\/)
+      (if (and (not (string-null? url)) (equal? (string-ref url 0) #\/))
         (proxy-page (string-append "url=https://knowyourmeme.com" url))
-        (error-page 400)))))
+        (begin (newline) (error-page 400))))))

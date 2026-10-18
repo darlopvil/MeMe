@@ -27,7 +27,18 @@
   #:use-module (ice-9 textual-ports)
   #:use-module (ice-9 binary-ports))
 
+;; Last line of defence: anything the routes below throw becomes a
+;; readable 500 page and one log line instead of a bare 500 + backtrace.
 (define (handler request request-body)
+  (catch #t
+    (lambda () (dispatch request request-body))
+    (lambda (key . args)
+      (pass-signals key args)
+      (display (format #f "; \tHandler error: ~a ~s" key args))
+      (newline)
+      (error-page 500 "Something went wrong while handling this request."))))
+
+(define (dispatch request request-body)
   (let* ((uri (request-uri request))
          (path (uri-path uri))
          (path-components (split-and-decode-uri-path path))
@@ -55,7 +66,7 @@
                                      get-bytevector-all)))
       ((equal? path "/proxy")
        (proxy-page (uri-query uri)))
-      ((equal? path "/")
+      ((or (equal? path "/") (null? path-components))
        (home-page))
       ((and
          (equal? (car path-components) "editorials")
