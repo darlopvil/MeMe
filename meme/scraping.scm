@@ -162,6 +162,27 @@
 (define invidious-url (frontend-url "INVIDIOUS_URL"))
 (define eddrit-url    (frontend-url "EDDRIT_URL"))
 (define soprano-url   (frontend-url "SOPRANO_URL"))
+(define priviblur-url (frontend-url "PRIVIBLUR_URL"))
+
+;; Priviblur URL for a Tumblr HOST and REST (path and query), or #f.
+;; Same mapping as Priviblur's own url_handler: media and asset hosts go
+;; through its /tblr proxy, <blog>.tumblr.com/post/<id> becomes
+;; /<blog>/<id>, and www.tumblr.com paths are kept as they are.
+(define (tumblr->priviblur host rest)
+  (and priviblur-url
+       (or (equal? host "tumblr.com") (string-suffix? ".tumblr.com" host))
+       (let ((parts (string-split host #\.)))
+         (string-append
+           priviblur-url
+           (cond ((and (= (length parts) 4) (equal? (cadr parts) "media"))
+                  (string-append "/tblr/media/" (car parts) rest))
+                 ((equal? host "assets.tumblr.com") (string-append "/tblr/assets" rest))
+                 ((equal? host "static.tumblr.com") (string-append "/tblr/static" rest))
+                 ((equal? host "a.tumblr.com") (string-append "/tblr/a" rest))
+                 ((equal? (car parts) "tumblr") rest)
+                 ((string-prefix? "/post" rest)
+                  (string-append "/" (car parts) (substring rest 5)))
+                 (else (string-append "/" (car parts) rest)))))))
 
 ;; Where a link to a third-party site should point: the matching privacy
 ;; frontend when one is configured, otherwise the original URL. Only the
@@ -207,7 +228,14 @@
           ((and soprano-url (equal? host "tenor.com")
                 (string-prefix? "/view/" rest))
            (string-append soprano-url rest))
+          ((tumblr->priviblur host rest) => identity)
           (else url))))))
+
+;; Tumblr-hosted image -> the same image through Priviblur, or #f
+(define (tumblr-image->priviblur url)
+  (and priviblur-url
+       (string-match "^https?://[a-z0-9]+\\.media\\.tumblr\\.com/" url)
+       (frontend-href url)))
 
 ;; Point links in page content at the configured frontends, and drop
 ;; KYM's JavaScript-only controls ("click to expand" and the like).
@@ -253,7 +281,7 @@
         (cond ((not url) '())
               ((proxyable? url)
                `(img (@ (src ,(proxy url)) (alt ,alt) (loading "lazy"))))
-              ((imgur->rimgo url)
+              ((or (imgur->rimgo url) (tumblr-image->priviblur url))
                => (lambda (src)
                     `(img (@ (src ,src) (alt ,alt) (loading "lazy")))))
               (else (external-link url "external media")))))))

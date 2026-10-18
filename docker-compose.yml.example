@@ -13,5 +13,6 @@ services:
       # - INVIDIOUS_URL=https://invidious.example.org
       # - EDDRIT_URL=https://eddrit.example.org
       # - SOPRANO_URL=https://soprano.example.org
+      # - PRIVIBLUR_URL=https://priviblur.example.org
     ports:
       - "8003:8003"
