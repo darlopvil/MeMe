@@ -26,8 +26,8 @@ Compared to upstream (cobra/MeMe at `4b3b282`), this fork covers most of the sit
 
 **Privacy**
 
-- Embeds are served by self-hosted frontends: TikToks by ProxiTok, tweets and video tweets by Nitter, YouTube videos by Invidious, Imgur images by rimgo and Tumblr images by Priviblur.
-- Links to Twitter/X, YouTube, Reddit, TikTok, Imgur, Tenor and Tumblr point at the configured frontends.
+- Embeds are served by self-hosted frontends: TikToks by ProxiTok, tweets and video tweets by Nitter, YouTube videos by Invidious, Reddit posts by eddrit, Tumblr posts and images by Priviblur and Imgur images by rimgo. Instagram posts become a single link.
+- Links to Twitter/X, YouTube, Reddit, TikTok, Imgur, Tenor, Tumblr and Instagram point at the configured frontends.
 - Images from KYM's CDNs, YouTube thumbnails and Tenor GIFs go through the instance's image proxy. Any other third-party content becomes a labelled link instead of being loaded. KYM's Google Trends widget becomes a plain link.
 - User-written comment HTML is reduced to a whitelist of safe elements and attributes.
 - A `robots.txt` asks crawlers not to index the instance.
@@ -91,11 +91,12 @@ MeMe exits immediately on `SIGINT` or `SIGTERM`, so it can run under any service
 | `PROXITOK_URL`  | unset | [ProxiTok](https://github.com/pablouser1/ProxiTok) instance used to embed TikTok videos. |
 | `NITTER_URL`    | unset | [Nitter](https://github.com/zedeus/nitter) instance used to embed tweets. |
 | `INVIDIOUS_URL` | unset | [Invidious](https://github.com/iv-org/invidious) instance used to embed YouTube videos. |
-| `EDDRIT_URL`    | unset | [eddrit](https://github.com/corenting/eddrit) instance that Reddit links point to. |
+| `EDDRIT_URL`    | unset | [eddrit](https://github.com/corenting/eddrit) instance used for Reddit links and embedded posts. |
 | `SOPRANO_URL`   | unset | [Soprano](https://codeberg.org/cobra/Soprano) instance that Tenor links point to. |
-| `PRIVIBLUR_URL` | unset | [Priviblur](https://github.com/syeopite/priviblur) instance used for Tumblr links and images. |
+| `PRIVIBLUR_URL` | unset | [Priviblur](https://github.com/syeopite/priviblur) instance used for Tumblr links, images and embedded posts. |
+| `KITTYGRAM_URL` | unset | [Kittygram](https://codeberg.org/irelephant/kittygram) instance that Instagram links point to. |
 
-Links to those sites inside entries, articles, profiles and comments are also rewritten to point at the configured frontend. When one of the frontend variables is unset, that kind of embed is shown as a plain link to the original site instead, so the browser never loads anything from Imgur, TikTok, Twitter/X, YouTube or Tumblr on its own. Embedded frontends must allow being framed (no `X-Frame-Options` or restrictive `frame-ancestors` on their embed routes).
+Links to those sites inside entries, articles, profiles and comments are also rewritten to point at the configured frontend. When one of the frontend variables is unset, that kind of embed is shown as a plain link to the original site instead, so the browser never loads anything from Imgur, TikTok, Twitter/X, YouTube, Reddit, Tumblr or Instagram on its own. Embedded frontends must allow being framed (no `X-Frame-Options` or restrictive `frame-ancestors` on their embed routes).
 
 ## Contributing
 

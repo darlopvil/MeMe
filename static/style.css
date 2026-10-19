@@ -434,6 +434,15 @@ figure.embed-tweet iframe {
 	height: 600px;
 }
 
+p.instagram-card {
+	text-align: center;
+}
+
+figure.embed-reddit iframe {
+	width: 640px;
+	height: 560px;
+}
+
 figure.embed-tumblr iframe {
 	width: 540px;
 	height: 640px;

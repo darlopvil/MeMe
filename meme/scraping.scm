@@ -163,6 +163,7 @@
 (define eddrit-url    (frontend-url "EDDRIT_URL"))
 (define soprano-url   (frontend-url "SOPRANO_URL"))
 (define priviblur-url (frontend-url "PRIVIBLUR_URL"))
+(define kittygram-url (frontend-url "KITTYGRAM_URL"))
 
 ;; Priviblur URL for a Tumblr HOST and REST (path and query), or #f.
 ;; Same mapping as Priviblur's own url_handler: media and asset hosts go
@@ -229,6 +230,12 @@
                 (string-prefix? "/view/" rest))
            (string-append soprano-url rest))
           ((tumblr->priviblur host rest) => identity)
+          ;; Kittygram mirrors Instagram's paths; Instagram's tracking
+          ;; parameters (utm_source=ig_embed...) are dropped
+          ((and kittygram-url (member host '("instagram.com" "m.instagram.com")))
+           (string-append kittygram-url
+                          (let ((q (string-index rest #\?)))
+                            (if q (substring rest 0 q) rest))))
           (else url))))))
 
 ;; Tumblr-hosted image -> the same image through Priviblur, or #f
@@ -288,7 +295,9 @@
 
 ;; Embeds. KYM ships TikToks as <lite-tiktok> / blockquote.tiktok-embed,
 ;; tweets as blockquote.twitter-tweet(-lazy), video tweets as
-;; blockquote.twitter-video, Tumblr posts as div.tumblr-post, and YouTube as
+;; blockquote.twitter-video, Tumblr posts as div.tumblr-post, Reddit posts
+;; as blockquote.reddit-embed-bq, Instagram posts as
+;; blockquote.instagram-media(-lazy), and YouTube as
 ;; <lite-youtube> or a YouTube <iframe>, all turned into players by its
 ;; JavaScript. Each one becomes an iframe to the configured frontend,
 ;; wrapped in a <figure> so get-meme's top-level filters (which drop bare
@@ -406,11 +415,70 @@
                                   "/embed?theme=dark"))
       node)))
 
+;; Reddit posts: blockquote.reddit-embed-bq (older ones: .reddit-card),
+;; turned into an iframe by Reddit's widgets.js. Its first link points at
+;; the post. eddrit serves a compact, script-free view at
+;; /r/<sub>/comments/<id>/<title>/embed (also under /user/); the title
+;; segment is required, so a placeholder is used when the link has none.
+;; Without eddrit the quote stays, with its links rewritten.
+(define (reddit-post-path node)
+  (let loop ((hrefs ((sxpath '(// a @ href *text*)) node)))
+    (if (null? hrefs)
+      #f
+      (let ((m (string-match
+                 (string-append "^https?://(www\\.|old\\.|new\\.)?reddit\\.com"
+                                "(/(r|user|u)/[^/]+/comments/[A-Za-z0-9]+)"
+                                "(/([^/?#]+))?")
+                 (car hrefs))))
+        (if m
+          (let ((base (match:substring m 2)))
+            (string-append
+              (if (string-prefix? "/u/" base)
+                (string-append "/user/" (substring base 3))
+                base)
+              "/" (or (match:substring m 5) "_")))
+          (loop (cdr hrefs)))))))
+
+(define (reddit-embed node)
+  (let ((path (reddit-post-path node)))
+    (if (and eddrit-url path)
+      (embed-frame "reddit"
+                   (string-append eddrit-url path "/embed?theme=dark"))
+      node)))
+
+;; Instagram posts: blockquote.instagram-media(-lazy), turned into a player
+;; by Instagram's embed.js; without it only a big logo and two links are
+;; left. Kittygram has no compact embed view (its /embed routes render the
+;; full post page), so the quote becomes a single line linking to the
+;; post, through Kittygram when configured.
+(define (instagram-embed node)
+  (let* ((permalink (or (attr 'data-instgrm-permalink node)
+                        (let ((h ((sxpath '(// a @ href *text*)) node)))
+                          (and (pair? h) (car h)))))
+         (clean (and permalink
+                     (let ((q (string-index permalink #\?)))
+                       (if q (substring permalink 0 q) permalink))))
+         (shared (filter (lambda (s) (string-prefix? "A post shared by" s))
+                         (map (lambda (p) (text-of (list p)))
+                              ((sxpath '(// p)) node)))))
+    (if (not clean)
+      node
+      `(p (@ (class "instagram-card"))
+          "Instagram: "
+          (a (@ (href ,(frontend-href clean))
+                (rel "nofollow noopener noreferrer"))
+             ,(if (pair? shared) (car shared) "View post"))))))
+
 (define (embed-node? e)
   (and (pair? e)
        (symbol? (car e))
        (or (memq (car e) '(lite-tiktok lite-youtube iframe embed object))
            (and (eq? (car e) 'div) (has-class? "tumblr-post" e))
+           (and (eq? (car e) 'blockquote)
+                (or (has-class? "reddit-embed-bq" e)
+                    (has-class? "reddit-card" e)
+                    (has-class? "instagram-media" e)
+                    (has-class? "instagram-media-lazy" e)))
            (and (eq? (car e) 'blockquote)
                 (or (has-class? "tiktok-embed" e)
                     (has-class? "twitter-tweet" e)
@@ -435,9 +503,14 @@
              (else (external-link src "external media")))))
     ((div) (tumblr-embed e))
     (else
-     (if (has-class? "tiktok-embed" e)
-       (tiktok-embed (attr 'data-video-id e) e)
-       (tweet-embed e)))))
+     (cond ((has-class? "tiktok-embed" e)
+            (tiktok-embed (attr 'data-video-id e) e))
+           ((or (has-class? "reddit-embed-bq" e) (has-class? "reddit-card" e))
+            (reddit-embed e))
+           ((or (has-class? "instagram-media" e)
+                (has-class? "instagram-media-lazy" e))
+            (instagram-embed e))
+           (else (tweet-embed e))))))
 
 (define (embed-replace nodeset)
   (modify-list nodeset embed-node? embed-node->html))
